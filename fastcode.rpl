@@ -1,0 +1,138 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Fast code )
+
+(This is an early-loaded standard library, containing routines mostly
+ written with internals, for things not requiring the elaborate type
+ checking normally employed.)
+
+(DROP!: Clear the stack.)
+{ :name: DROP!
+  :args: #0
+  :hint: "Drop everything from the stack."
+  :table: { { `:: I*.stack I*.len I*.dropn ; } } }
+I*.stobin
+
+
+(REP: repeat, using code modification.
+ This version just appends recursion, duplicates the whole program
+ to store itself in its own local variable, and goes to town.)
+{ :name: REP
+  :args: #1
+  :hint: "Repeatedly evaluate a code object until it returns 0." 
+  :table:
+  { { `:: 
+        ':: ~'_rep IFT ; 
+        I*.catcode I*.dup 
+        { ~_rep } I*.local ; Types.Code } } }
+I*.stobin
+
+
+(RCLD: Recall an object or return a default if the name does not exist.)
+{ :name: RCLD
+  :args: #2
+  :hint: "Recall an object if it exists, otherwise return a default value."
+  :table:
+  { { `::
+        I*.swap I*.dup I*.exists
+        ':: I*.rcl I*.swap ; I*.ift I*.drop ;
+       Types.Symbol Types.Any } } }
+I*.stobin
+
+
+(HAS: See if a value exists in a list.  This doesn't evaluate any
+ user code, so it was safe to implement with internals for a smidge
+ of extra speed.)
+`':: 
+  I*.>quote
+  I*.swap I*.dup I*.len
+  ':: ~idx ~length I*.<
+    ':: ~'list I*.rcl ~idx I*.get ~term I*.==
+      #1
+      ':: ~idx #1 I*.+int ~'idx I*.sto ~loop ;
+      I*.ifte ;
+    #0 
+    I*.ifte ; 
+  I*.dup ~{ loop length list term :idx:#0 } I*.local ;
+'I*.has STO
+
+{ :name: HAS
+  :args: #2
+  :hint: "Check to see if a list on line 2 contains something like the item on line 1."
+  :table: { { I*.has Types.List Types.Any } } }
+I*.stobin
+
+
+(READF: Read an entire file split into lines.)
+':: "r" `I*.fopen
+  '::
+    { }
+    file `I*.feof `I*.not
+    ':: 
+      file `I*.freadline `I*.+list file `I*.feof 
+      `I*.self `I*.swap '`I*.drop '`I*.eval `I*.ifte ;
+    `I*.ift file `I*.fclose ; 
+  { file } `I*.local ;
+'I*.readf STO
+
+{ :name: READF
+  :args: #1
+  :hint: "Read an entire file and return it as a list of strings, one per line."
+  :table: { { I*.readf Types.String } } }
+I*.stobin
+
+
+(UNPARSE: Turn an object back into a string with delimiters and decoration.)
+
+{ :name: UNPARSE
+  :args: #1
+  :hint: "Un-parse an object back into a string, more or less."
+  `:table: 
+    { 
+      { I*.num>str 
+        Types.Float } 
+      { :: I*.num>str "#" I*.swap I*.+str ;
+        Types.Integer } 
+      { :: "\"" I*.+str "\"" I*.swap I*.+str ;
+        Types.String }
+      { :: ")" I*.+str "(" I*.swap I*.+str ;
+        Types.Comment }
+      { :: I*.eval I*.lastcall "'" I*.swap I*.+str ;
+        Types.Quote }
+      { I*.sym>str
+        Types.Symbol }
+      { :: I*.len "{ … }" "{ }" I*.ifte ;
+        Types.List }
+      { :: I*.len ":: … ;" ":: ;" I*.ifte ;
+        Types.Code }
+      { :: I*.bin> #4 I*.rolld #3 I*.dropn ;
+        Types.Builtin }
+      { :: I*.tag> ": " I*.+str ":" I*.swap I*.+str
+           I*.swap I*.lastcall I*.+str ;
+        Types.Tag }
+      { :: I*.type Types.n I*.swap I*.get " object)" I*.+str 
+          "(" I*.swap I*.+str ; 
+        Types.Any } } }
+I*.stobin
+
+(Display.)
+{ :name: DISP
+  :args: #1
+  :hint: "Print any object in human-readable form to the screen."
+  :table: { { I*.disp Types.String } 
+            { `:: >STR I*.disp ; Types.Any } } }
+I*.stobin
+
+(Display with no newline.)
+{ :name: DISPN
+  :args: #1
+  :hint: "DISP without newline."
+  :table: { { I*.dispn Types.String } 
+            { `:: >STR I*.disp ; Types.Any } } }
+I*.stobin
+
+(String concatenation stuff dependent upon >STR.)
+{ { I*.+str Types.String Types.String }
+  { `:: I*.swap >STR I*.swap I*.+str ; Types.Any Types.String }
+  { `:: >STR I*.+str ; Types.String Types.Any } }
+`'+ I*.binhook I*.drop

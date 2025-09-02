@@ -1,0 +1,18 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Boot modules list )
+
+(This is a list of files loaded by boot.rpl on startup.  The base directory
+ and extension are automatically added, and comments are ignored.)
+
+{ "placeholders"(Some aesthetic ordering of the named store.)
+  "prebin"      (Lower level code to generate builtins.)
+  "builtins"	(Bubble-wrapped versions of internals.)
+  "fastcode"    (More elaborate functions based upon internals.)
+  "static"      (Source-source compiler.)
+  "rpl" 	(The standard library and REPL.)
+  "cobs" 	(Codswallop Objects, an OOP implementation.)
+  "colors" 	(ANSI type highlighting and other technicolor pleasantries.) 
+  "sst"         (Single step debugging tool.)
+  "todisk"      (Some code to implement a nice version of >DSK.) 
+  ("ttymode")     (Modify terminal settings to play nice with a typewriter.) }

@@ -1,0 +1,121 @@
+(Mandelbrot per Wikipedia pseudocode)
+
+(Basic constants.)
+'::
+  [dir:
+    :maxiter: #15
+    :minX:    -2
+    :maxX:      .47
+    :minY:    -1.12
+    :maxY:     1.12 ]
+  CP
+  'const STO
+
+  (Build a list of colored pixels to choose from.)
+  { "@" } const.maxiter *
+  ':: 
+    idx
+    ':: idx ANSI.setfg SWAP + ;
+    ':: DROP " " ;
+    IFTE 
+    update ;
+  FOREACH
+  'const.pixels STO 
+
+  (Set a sensible default output size.)
+  #55 width ;
+'reset STO
+
+(Receive new values.)
+'::
+  >FLOAT 'const.minY STO >FLOAT 'const.minX STO ;
+'upperleft STO
+'::
+  >FLOAT 'const.maxY STO >FLOAT 'const.maxX STO ;
+'lowerright STO
+':: 
+  >INT 'const.resY STO >INT 'const.resX STO ;
+'resolution STO
+
+(Figure something like a correct aspect ratio, given text is often
+ about twice as tall as it is wide.)
+':: 
+  >INT DUP 'const.resX STO
+  const.maxY const.minY - 2 / const.maxX const.minX - /
+  * >INT 'const.resY STO ;
+'width STO
+
+(Draw a pixel by picking it from our list by color.)
+'::
+  const.pixels SWAP GET DISPN ;
+'drawl STO
+
+(Find an iteration count (up to const.maxiter) for a given point.)
+'::
+  ':: iterate i ;
+  { :iterate:
+    ::
+      (Break if x^2+y^2>4.) 
+      x 2 ^ y 2 ^ + 4 <=
+      '::
+        (Update x and y values.  Figure both before storing either.)
+        x 2 ^ y 2 ^ - x0 +
+        2 x * y * y0 + 
+        'y STO 'x STO
+        (Decrement iteration count and loop as needed.)
+        i #1 - DUP 'i STO
+        'iterate IFT ;
+      IFT ;
+    :x: 0
+    :y: 0
+    :i: const.maxiter
+    y0 x0 }
+  LOCAL ;
+STATICN 'onepoint STO
+
+(Run the full calculation.)
+'::
+  "Plotting set from (" const.minX + ", " + const.minY + ") to (" +
+  const.maxX + ", " + const.maxY + ") at " + const.resX + "x" +
+  const.resY + DISP
+
+  (Calculate loop increment for X axis.)
+  const.maxX const.minX - const.resX /
+  (Same for Y axis.)
+  const.maxY const.minY - const.resY /
+  '::
+    '::
+      '::
+        (Calculate and draw one point.)
+        x y onepoint drawl
+        (Increment X and loop if there's more to this line.)
+        x stepx + DUP 'x STO
+        const.maxX < ;
+      REP
+      (Reset color and end line.)
+      ANSI.codes.nofore DISP
+      (Reset X value for next loop.)
+      const.minX 'x STO 
+      (Increment Y.)
+      y stepy + DUP 'y STO
+      (Loop only if we're not done.)
+      const.maxY < ;
+    REP ;
+  { stepy stepx 
+    :x: const.minX
+    :y: const.minY } 
+  LOCAL ;
+STATICN 'run STO
+
+(Now introduce us and hand off to the user.)
+"Mandlebrot set
+--------------
+reset: Load default settings
+run: Run with current settings
+[x] [y] upperleft: Set new upper left corner
+[x] [y] lowerright: Set new lower right corner
+[x] [y] resolution: Set new output resolution
+[x] width: Set new width with automatic aspect ratio"
+DISP
+
+reset

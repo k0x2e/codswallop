@@ -1,0 +1,50 @@
+(McCarthy recursion whatsit, returns 91 if input is <101.)
+
+"
+Programming artifact demonstration: McCarthy recursion routine
+--
+Passing an integer returns x-10 if x>100; otherwise, it returns #91.
+
+There are three versions:
+ - 'm' is completely unoptimized
+ - 'f' uses STATIC and stores a local copy of itself to recurse faster
+ - 'x' uses system calls and a local variable to be faster still.
+
+Compare speeds with mfxprofile."
+DISP
+
+(Regular version)
+':: DUP #100 > ':: #10 - ; ':: #11 + m m ; IFTE ; 'm STO
+
+(Fast version.  By using a local rather than global variable, the recursion
+ symbol is right on top rather than at the very end of the names list; and
+ with STATIC, only 'f' needs to be looked up anyway.)
+'::
+  ':: DUP #100 > ':: #10 - ; ':: #11 + f f ; IFTE ;
+  DUP { f } LOCAL ;
+STATICN 'f STO
+
+(Sysrpl version.  This creates a built-in to enforce argument checking,
+ and the recursion is done within a local variable context partly so argument
+ checks only take place when the user calls, not when it recurses.)
+{ { ::
+      ':: `I*.dup #100 `I*.> ':: #10 `I*.-int ; ':: #11 `I*.+int x x ; `I*.ifte ;
+      `I*.dup { x } `I*.local ;
+    `Types.Integer } }
+#1 
+"For any integer, return 91 if it is ≤100, or n-10 otherwise."
+'x
+>BIN 'x STO
+
+':: #-20000 'm PROFILE DISP DROP #-20000 'f PROFILE DISP DROP #-20000 'x PROFILE DISP DROP ;
+'mfxprofile STO
+
+(Reference values for tag storage scheme:
+1.823760986328125
+0.7539498805999756
+0.46626925468444824)
+
+(Reference values 2/15/25:
+0.6866390705108643
+0.2239243984222412
+0.12558865547180176)

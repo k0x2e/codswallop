@@ -1,0 +1,75 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Builtin-making helper code )
+
+(This module provides stobin, setbintable, and ckbinline, which are used
+ throughout the boot process to create builtins and preprocess dispatch
+ tables.)
+
+(First, here's a thing which makes the rest of this code easier to read.
+ It takes a list of tags and uses those to prepare and store the builtins.
+ Sort of like named arguments, by abusing local variables.)
+'::
+  ':: table args hint 'name I*.rcl I*.>bin I*.setbintable 'name I*.rcl I*.sto ;
+  I*.swap I*.local ;
+'I*.stobin I*.sto
+
+(Take a builtin and dispatch table as arguments, and set its initial
+ dispatch table, while discarding any previous attempts.)
+`'::
+  (Get just the arg count.)
+  I*.dup I*.bin> #3 I*.pick #5 I*.rolld #4 I*.dropn
+  (And the size of the table:) #3 I*.pick I*.len
+  (And max type number:) ~Types.n I*.len
+  '::
+    (Absorb the above variables, but only act on a lengthy table.)
+    ~idx
+    '::
+      (Get the next line.)
+      I*.dup ~idx #1 I*.-int I*.dup ~'idx I*.sto I*.get
+      (Verify it and put it back.)
+      ~I*.ckbinline ~idx I*.put
+      (Repeat if there's more to do.)
+      I*.self ~idx 'I*.eval 'I*.drop I*.ifte ;
+    I*.ift
+    (And return a new builtin with the new table.)
+    ~'ourbin I*.rcl I*.swap I*.setdispatch ~'ourbin I*.rcl ;
+  ~{ maxtype idx args ourbin } I*.local ;
+'I*.setbintable I*.sto
+
+(Verify one line of a dispatch table and resolve its symbols.  args must
+ already exist.)
+`'::
+  (First, is it even a list?)
+  I*.dup I*.type Types.List I*.==
+  ':: (Yes.  Is it the appropriate length?) 
+    I*.dup I*.len #1 I*.-int ~args I*.==
+    ':: (Yes.  Resolve any symbols.)
+      ~args
+      '::
+        (For each object, try to recall a symbol if it is one.)
+        I*.dup ~idx I*.get I*.dup I*.type Types.Symbol I*.==
+        ':: I*.dup I*.exists 'I*.rcl I*.ift ; I*.ift
+        (For all but the first object, must be an in-range integer.)
+        ~idx 
+        '::
+          I*.dup I*.type Types.Integer I*.==
+          ':: I*.dup I*.dup ~maxtype I*.>= I*.swap #0 I*.< I*.or ; #1
+          I*.ifte
+          ':: I*.drop I*.drop "This is not a great type number" I*.ded ;
+          I*.ift ;
+        I*.ift
+        (Then store back the updated object and repeat.)
+        ~idx I*.put I*.self ~idx I*.dup #1 I*.-int ~'idx I*.sto
+        'I*.eval 'I*.drop I*.ifte ;
+      ~{ idx } I*.local 
+      (The last check should be to make sure it can't dispatch to itself.)
+      I*.dup I*.pop I*.swap I*.drop ~'ourbin I*.rcl I*.==ref
+      ':: "Builtin can't dispatch to itself" I*.ded ;
+      I*.ift ;
+    ':: (No, wrong length.) I*.drop "How many arguments now" I*.ded ;
+    I*.ifte ;
+  ':: (No, not a list.)
+    I*.drop "Not much of a dispatch table there, friend" I*.ded ;
+  I*.ifte ;
+'I*.ckbinline I*.sto

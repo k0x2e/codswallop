@@ -1,0 +1,22 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Typewriter module )
+
+(This module provides basic ANSI terminal control characters, and
+ type highlighting and stack printing goodness.)
+
+(Set underline for white, red, and bright, and clear for everything else.)
+ANSI.codes.esc "R" + 
+DUP 'ANSI.codes.normal STO
+    'ANSI.codes.nofore STO
+ANSI.codes.esc "E" + 
+DUP 'ANSI.codes.bright STO
+DUP 'ANSI.codes.red STO 
+    'ANSI.codes.white STO
+
+(No colorization at all on a typewriter.)
+{ "" } Types.n LEN *
+'ANSI.default.colors STO
+
+(Window title setting is silently unsupported.)
+'DROP 'ANSI.settitle STO

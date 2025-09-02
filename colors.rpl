@@ -1,0 +1,519 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Colors boot module )
+
+(This module provides basic ANSI terminal control characters, and
+ type highlighting and stack printing goodness.)
+
+(Our base directory tree.)
+[dir:
+  :codes:   [dir:]
+  :ize:     [dir:]
+  :default: [dir:
+    :margin: #70
+    :depth:  #20
+    :objs:   #50
+    :tab:     #2
+    :stack:   #8 
+    :errwait: #0 ]]
+'ANSI STO
+
+(Function to make a foreground color string.)
+':: "m" + ANSI.codes.csi "38;5;" + SWAP + ;
+'ANSI.setfg STO
+
+(Function to make a background color string.)
+':: "m" + ANSI.codes.csi "48;5;" + SWAP + ;
+'ANSI.setbg STO
+
+(Function to highlight a string.)
+':: ANSI.codes.bright SWAP + ANSI.codes.normal + ;
+'ANSI.highlight STO
+
+(Function to set an xterm title bar.)
+':: ANSI.codes.esc "]0;" + SWAP + #7 >ASC + DISPN ;
+'ANSI.settitle STO
+
+(Some miscellaneous ANSI codes.)
+#27 >ASC 'ANSI.codes.esc STO
+ANSI.codes.esc "[" + 'ANSI.codes.csi STO
+ANSI.codes.csi "0m" + 'ANSI.codes.normal STO
+ANSI.codes.csi "1m" + 'ANSI.codes.bright STO
+#10 >ASC 'ANSI.codes.enter STO
+ANSI.codes.csi "2J" + ANSI.codes.csi + ";H" + 'ANSI.codes.clear STO
+#1 ANSI.setfg 'ANSI.codes.red STO
+#14 ANSI.setfg 'ANSI.codes.cyan STO
+#15 ANSI.setfg 'ANSI.codes.white STO
+#251 ANSI.setfg 'ANSI.codes.nofore STO
+
+(A list of per-type ANSI-izer routines.)
+{ ANSI.ize.default } Types.n LEN * 
+'ANSI.ize.dir   Types.Directory PUT
+'ANSI.ize.quote Types.Quote PUT
+'ANSI.ize.list  Types.List  PUT
+'ANSI.ize.code  Types.Code  PUT
+'ANSI.ize.tag   Types.Tag   PUT
+'ANSI.default.izers STO
+
+(Syntax highlighting color strings go here, one per object type.
+ First number is the default color.)
+{ "" } Types.n LEN *
+#251 ANSI.setfg Types.Any       PUT
+ #12 ANSI.setfg Types.Context   PUT
+  #6 ANSI.setfg Types.Integer   PUT  
+  #6 ANSI.setfg Types.Float     PUT    
+  #7 ANSI.setfg Types.String    PUT   
+  #9 ANSI.setfg Types.Symbol    PUT 
+  #2 ANSI.setfg Types.Comment   PUT
+ #11 ANSI.setfg Types.Builtin   PUT
+  #3 ANSI.setfg Types.Internal  PUT
+  #4 ANSI.setfg Types.Directory PUT
+ #13 ANSI.setfg Types.List      PUT
+ #14 ANSI.setfg Types.Code      PUT
+#130 ANSI.setfg Types.Tag       PUT
+#136 ANSI.setfg Types.Handle    PUT
+ #10 ANSI.setfg Types.Quote     PUT
+'ANSI.default.colors STO
+
+(Function to add defaults to type and color selectors, as a helper for
+ user type registration.)
+':: ANSI.default.colors DUP #0 GET + 'ANSI.default.colors STO
+  ANSI.default.izers DUP #0 GET + 'ANSI.default.izers STO ;
+'ANSI.addtype STO
+
+(  "ANSI-izers" -- per-type object highlighters  )
+
+(A colorize routine will take a word and word length, and
+ call back to 'write' when it has a complete word to return.
+ By the time it gets here, it has at its disposal:
+ obj: the object in question
+ word: the current word in progress
+ length: length of the current word before we got it
+ depth: maximum recursion depth for composite objects
+ stack: maximum stack lines to show
+ newline: write out current line
+ write: append current text
+ izer: colorize a new object)
+
+(General colorize routine for non-fancy atoms.)
+'::
+  (Fetch our object, turn it into a string.)
+  word obj DUP TYPE SWAP UNPARSE
+  (Add its length, and a space, to our word length.)
+  DUP LEN length + #1 + 'length STO
+  (Get a color for it according to type.)
+  SWAP colors SWAP GETE SWAP +
+  (And shut off the color, insert trailing space, and add our word.)
+  nocolor + " " + + 'word STO
+  write ;
+'ANSI.ize.default STO
+
+(Colorize a tag.)
+'::
+  (The tag name will be in the tag's color.)
+  obj OBJ> UNPARSE DUP LEN #3 + length + 'length STO
+  word colors Types.Tag GETE + ":" + SWAP + ": " +
+  'word STO 
+  (Then depending on whether we've recursed too far...)
+  depth
+  (Send out to colorize the contents of the tag.  By not calling write here,
+   there's always a nonbreaking space between the tag and at least part of
+   its contents.)
+  ':: depth #1 - ':: izer ; { depth } LOCAL ;
+  (Or forget the contents and gently refuse to dig further.)
+  ':: DROP word "…" + nocolor + " " + 'word STO 
+     length #1 + 'length STO write ;
+  IFTE ;
+'ANSI.ize.tag STO
+
+(Colorize a quote.  This could be, but is not, subject to the recursion limit.)
+'::
+  (First, add a color quote symbol to our word, and increment length.)
+  word colors Types.Quote GETE + "'" + 'word STO
+  length #1 + 'length STO
+  (Then recall the contents of our object and hand that off.
+   It will take care of writing back the completed string.)  
+  obj EVAL izer ;
+'ANSI.ize.quote STO
+
+(Colorize a list.)
+'::
+  (First write our open bracket in list color.)
+  word colors Types.List GETE + "{ " + 'word STO
+  length #2 + 'length STO
+  write
+  (Now add a tab and subtract from our recursion depth for the rest of this.)
+  depth #1 - indent tab +
+  '::
+    (Then, if there is anything in it, pass it along to listinnards.)
+    obj LEN DUP
+    'ANSI.ize.listinnards 'DROP IFTE
+    (Finally, write out our closing bracket, again in list color, and a
+     newline to keep things tidy.)
+    word colors Types.List GETE + "}" + 
+    nocolor + " " + 'word STO
+    length #2 + 'length STO ;
+  { indent depth } LOCAL 
+  write ;
+'ANSI.ize.list STO
+
+(Similarly, colorize code.)
+'::
+  (Force a newline and write our opener in list color.)
+  newline
+  word colors Types.Code GETE + ":: " + 'word STO
+  length #3 + 'length STO
+  write
+  (Now add a tab and subtract from our recursion depth for the rest of this.)
+  depth #1 - indent tab +
+  '::
+    (Then, if there is anything in it, add a newline and run listinnards.)
+    obj LEN DUP
+    ':: newline ANSI.ize.listinnards ; 'DROP IFTE
+    (Finally, write out our closing bracket, again in list color, and a
+     newline to keep things tidy.)
+    word colors Types.Code GETE + "; " + 
+    nocolor + 'word STO
+    length #2 + 'length STO
+    write ;
+  { indent depth } LOCAL
+  newline ;
+'ANSI.ize.code STO
+
+(Colorize the innards of a non-empty list, accepting the list length as an
+ argument.  This automatically increments the indentation, too.  Recursion
+ limit is also handled here, since it's done the same way for lists and code.)
+':: 
+  '::
+    depth
+    (If we still have depth to go, process the list.)
+    '::
+      '::
+         obj idx GET izer
+         idx #1 + DUP 'idx STO 
+         DUP objlimit < SWAP max < AND ;
+      REP ;
+    IFT
+    depth NOT idx objlimit == OR
+    (Otherwise, politely refuse.)
+    ':: word "… " + 'word STO
+      length #2 + 'length STO
+      write ;
+    IFT ;
+  { max :idx: #0 } LOCAL ;
+'ANSI.ize.listinnards STO
+
+(Colorize a directory.)
+'::
+  word colors Types.Directory GETE + "[dir: " + 'word STO
+  length #6 + 'length STO write
+  indent tab +
+  ':: ANSI.ize.dirinnards
+    word colors Types.Directory GETE + "]" +
+    nocolor + " " + 'word STO  ;
+  { indent } LOCAL write
+;
+'ANSI.ize.dir STO
+
+(Colorize the contents of a directory.  This should probably also recurse
+somehow, but if it at least prints anything, that'll be keen.)
+'::
+  obj DUP 'obj STO DIR DUP LEN
+  '::
+    depth
+    ':: max
+      ':: 
+        '::
+          (Pull the actual object in question out of the dir to get its type.) 
+          'obj names idx GET + RCL TYPE DUP colors SWAP GETE SWAP
+          (Check to see if we ended up with a directory.)
+          Types.Directory ==
+          (If it is, take a quick detour to explore it.)
+          ':: (write) newline
+            word SWAP +
+            "[" + names idx GET UNPARSE DUP LEN #3 + length + 'length STO
+            + ": " + 'word STO write
+            (Get our subdirectory again.)
+            'obj names idx GET + EVAL
+            (Bump our indent and reduce our recursion depth.)
+            indent tab + depth #1 -
+            ':: ANSI.ize.dirinnards ; 
+            { depth indent obj } LOCAL
+	    word colors Types.Directory GETE + "]"
+            length #1 + 'length STO 
+            (Once we come back from all that, flag it.)
+            #1 'wasdir STO ;
+          (Colorize the entry name with that color.)
+	  ':: word SWAP + names idx GET UNPARSE DUP LEN #2 + length + 'length STO ;
+          IFTE
+          + nocolor + 'word STO
+          (And do the loop stuff.)
+          idx #1 + DUP 'idx STO
+          max < DUP
+          ':: word ", " + 'word STO write 
+            (If there's more things to list, and we just did a directory,
+             also force a newline for readability.)
+            wasdir
+            ':: newline #0 'wasdir STO ; IFT ;
+          ':: word "." + 'word STO ;
+          IFTE ;
+        REP ;
+      IFT ;
+    ':: word "… " + 'word STO
+       length #3 + 'length STO
+       write ;
+    IFTE ;
+  { max names :idx: #0 :wasdir: #0 } LOCAL ;
+'ANSI.ize.dirinnards STO
+
+(Colorize the contents of the stack.)
+':: 
+  (Grab the stack and its length, and see if there's a limit to how much
+   we should show.  This forms our start index.)
+  STACK DUP LEN    
+  DUP stacklimit >
+  '::
+    (Yes we're limited, so mention how much we're lopping off.) 
+    DUP stacklimit - DUP ANSI.codes.white
+    " ( +" + SWAP + " lines )" + ANSI.codes.nofore + 
+    'word STO write newline ;
+  #0 
+  IFTE
+  (Now loop through and git it.)
+  ':: size (If there is anything to git, that is.)
+    '::
+      ':: "Line " ANSI.codes.white + size idx - + 
+        nocolor + ": " +
+        'word STO #7 'length STO
+        list idx GET izer newline
+        idx #1 + DUP 'idx STO size < ;
+      REP ;
+    ':: "Empty stack" DISP ;
+    IFTE ;
+  { idx size list } LOCAL ;
+'ANSI.ize.stack STO
+
+
+(  Callback routines for highlighters  )
+
+(So the general idea is, there's going to be a unified callback function to
+ add a colorized block to the output text.  This callback will take 'word',
+ containing the colorized text, and 'length', the actual printed length.)
+'::
+  (See if this object exceeds our margin; if it does, force a new line.)
+  length cursor + margin > 'newline IFT
+  (Then append the text we received, and update our cursor, clear word,
+   and set the text ready flag.)
+  text word + 'text STO 
+  cursor length + 'cursor STO
+  "" 'word STO
+  #0 'length STO
+  #1 'textready STO ;
+'ANSI.ize.write STO
+
+(This default newline function is for requesting a new line for things
+ likely to want a bit of formatting, like code, or when the end of line is
+ reached by the callback.  This will suppress consecutive newlines, and
+ also print the current line.)
+'::
+  (Suppress newlines if no text has been written; otherwise display the 
+   current text and clear both it and the cursor.  Indent as needed.)
+  textready
+  ':: text display
+    " " indent * 'text STO 
+    indent 'cursor STO 
+    #0 'textready STO ;
+  IFT ;
+'ANSI.ize.newline STO
+
+(A specific purpose colorize function will accept the margin and cursor
+ values from the present environment, then look up the appropriate function
+ to call per type of object it was handed.  It's also quoted, to prevent it
+ from being evaluated unexpectedly.)
+':: QUOTE
+  ':: 
+    izers obj TYPE GETE ;
+  { obj } LOCAL ;
+'ANSI.ize.izer STO
+
+
+(  Default highlighting environment  )
+
+(This is the default local environment for making a colorization call.  It
+ declares all the variables needed, and is called just like LOCAL.  Including 
+ any of these variables in your own variable list will supersede the
+ defaults here, so it's safe to use for all occasions.)
+'::
+  { :margin: ANSI.default.margin
+    :depth: ANSI.default.depth
+    :tab: ANSI.default.tab
+    :stacklimit: ANSI.default.stack
+    :objlimit: ANSI.default.objs
+    :izers: ANSI.default.izers
+    :colors: ANSI.default.colors
+    :nocolor: ANSI.codes.nofore
+    :word: ""
+    :length: #0
+    :text: ""
+    :cursor: #0
+    :indent: #0
+    :textready: #0
+    :display: DISP
+    :newline: ANSI.ize.newline 
+    :write: ANSI.ize.write 
+    :izer: ANSI.ize.izer }
+  SWAP + LOCAL ;
+'ANSI.default.environment STO
+
+
+(  General purpose applications of the above  )
+
+(A generic colorize function will prepare a default environment and then
+ call into the specific purpose colorize function.)
+'::
+  ':: izer newline ;
+  {}
+  ANSI.default.environment ;
+'ANSI.tocolor STO
+
+(A stack colorize function based on the same default environment.)
+'::
+  ':: ANSI.ize.stack ;
+  {} ANSI.default.environment ;
+'ANSI.stack STO
+
+
+(Now compile our whole ANSI directory.)
+ANSI STATICN 'ANSI STO
+
+
+(Here's a much cleaner error traceback thing too, for use with the default
+ EXCEPT.  It accepts two strings with the offending caller and specific 
+ message, as well as a list of contexts it should pick apart and print.)
+'::
+  (First, let the user know their sins have caught up with them.)
+  "" DISP "You have died of dysentery." DISP "" DISP
+  
+  (Hang onto the length of our call stack as 'size'.)
+  DUP LEN
+  (And make up a new colors list, this time one that chooses a color based
+   on list position rather than object type.)
+  { :: idx ip ==
+      ANSI.codes.red
+      ""
+      IFTE ; }
+  Types.n LEN *
+  '::  
+    (If there are too many calls, skip the oldest ones and find our
+     starting index.  Otherwise our start index is 0.)
+    size stacklimit >
+    ':: size stacklimit - DUP " ( +" SWAP + " lines )" + DISP ;
+    #0 IFTE
+    (Show our calls, if any.)
+    core LEN
+    '::
+      (Now, for each call we're going to show, make an abbreviated printable
+       version of each code block.)
+      '::
+        ':: (Make a heading.)
+          newline
+          "In call " size idx - + ": " + 
+          DUP LEN 'length STO 
+          ANSI.codes.white SWAP + nocolor + 'word STO
+          (Then grab a context and display just the code with highlighted
+           IP.  IP needs to be adjusted back one.)
+          core idx GET OBJ> #5 ROLL #3 DROPN #1 -
+          ':: izer newline ; 
+          { ip :idx:#-1 } LOCAL
+          (Increment our index and see if we're at the end.)
+          idx #1 + DUP 'idx STO size < ;
+        REP ; 
+      { idx } LOCAL ;
+    ':: DROP "You were not doing anything particular at the time." DISP ;
+    IFTE
+    (And now that we've printed as much traceback as we're going to do, it's
+     time to say what actually went wrong.)
+    "" DISP
+    "The complaint leveled against you by " complainant + " is as follows:" +
+    DISP reason DISP ;
+  { colors size core reason complainant
+    :depth: #2 }
+  ANSI.default.environment 
+
+  ANSI.default.errwait 'PAUSE IFT ;
+STATICN 'ANSI.errtrace STO
+
+(Show the current named store.)
+':: "Current names:" DISP I*.firstobj ANSI.tocolor ; 
+STATICN '? STO
+
+(Or if you wanted it in black and white...)
+(':: "Current names:" DISP `I*.firstobj 
+  { "" } Types.n LEN * 
+  ':: izer newline ;
+  { colors } 
+  ANSI.default.environment ; 'bw? STO)
+
+(Show a type coloring legend.)
+'::
+  Types.n LEN
+  '::
+    "Object types:" DISP
+    ':: idx ": " +
+      ANSI.default.colors idx GETE + Types.n idx GET + 
+      ANSI.codes.normal + DISP
+      idx #1 + DUP 'idx STO max <
+    ; REP 
+  ;
+  { max :idx:#0 } LOCAL ;
+'LEGEND STO
+
+(Document things... in color.)
+{ {
+:: OBJ>
+  '::
+    "What we have here is a builtin which calls itself "
+    'sym RCL ANSI.highlight + ":" + DISP
+    "" DISP hint DISP "" DISP
+    "It takes " argcount + " argument" +
+    #1 argcount != ':: "s" + ; IFT
+
+    (Only finish our sentence about options if there are any.)
+    argcount
+    ':: 
+      ", and there " +
+      arglist LEN DUP #1 ==
+      ':: DROP "is one way to call it." ;
+      ':: " ways to call it." + "are " SWAP + ;
+      IFTE + DISP
+      "" DISP arglist
+      ':: "Stack configuration " idx + ":" + ANSI.highlight DISP 
+        argcount RIGHT 
+        '::
+          (For each argument, get the name of the type...)
+          DUP Types.n SWAP GET
+          (The color of the type...)
+          SWAP ANSI.default.colors SWAP GET
+          (And make a pretty string.)
+          SWAP + ANSI.codes.nofore +
+          "  Line " argcount idx - + ": " + 
+          SWAP + DISP
+        ; FOREACH DROP ;
+      FOREACH DROP ;
+    (Otherwise, if there are no arguments, finish our sentence here.)
+    ':: "." + DISP ;
+    IFTE ;
+  { sym hint argcount arglist } LOCAL ;
+Types.Builtin }
+{ :: DUP EXISTS
+    ':: DUP " is a symbol, following it..." + DISP RCL DOC ;
+    ':: " symbolizes nothing, but it sure is nice to look at" + DISP ;
+    IFTE ;
+  Types.Symbol } 
+{ :: TYPE Types.n SWAP GET "This thing is a regular old " SWAP + DISP ;
+  Types.Any } }
+{ DOC } STATIC
+#1
+"Document the various possibilities of a builtin function."
+'DOC >BIN 'DOC STO
+

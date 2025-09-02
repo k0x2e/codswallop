@@ -1,0 +1,164 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Single step debugger and posh error handling )
+
+(Call depth)
+'::
+  (Grab our current context depth.)
+  I*.getcontext OBJ> #4 DROPN #1 - ;
+STATICN
+'DEPTH STO
+
+(BAIL!  Drop as far back as the TRACE? variable tells us to, or scram
+ entirely if it's missing or less than 0.)
+'::
+  (Grab the current context.)
+  I*.getcontext I*.nextcontext
+
+  (Force a sensible value for TRACE?.)
+  'TRACE? EXISTS
+  ':: 'TRACE? RCL DUP TYPE Types.Integer !=
+    ':: DROP #-1 ; IFT ;
+  #-1 IFTE DUP 'TRACE? STO
+
+  (A negative TRACE? means it's time to quit.)
+  #0 <
+  ':: DROP I*.clrrun ;
+  ':: DEPTH TRACE? - #1 -
+    ':: I*.nextcontext ; SWAP * EVAL I*.setcontext ;
+  IFTE ;
+STATICN
+'BAIL! STO
+
+(Reimplementing CLR with the user side stuff.)
+':: DROP! BAIL! ; 'CLR STO
+
+(A general exception handler.  Since our job is to clean up, there are
+ several instances of restoring order if chaos has reigned.)
+'::
+  (!SST)
+
+  (Obtain some information about who did it and why.)
+  I*.errstate
+
+  (If except exists, drop our error state, remove except and evaluate it:
+   this is for safer, non-reentrant user error trapping.)
+  'except EXISTS
+  ':: #3 DROPN 'except RCL 'except RM BEVAL ;
+  IFT
+
+  (Show the user if we got here from a break.)
+  DUP ':: " Interrupt" DISP ; IFT
+
+  (Check and clear the flag for Break SST.)
+  'BREAKSST? #0 RCLD AND #0 'BREAKSST? STO
+
+  (Set the error flag.)
+  #1 'ISDED? STO
+
+  (Check and possibly make the continuation flag.)
+  'DEDCONT? #0 RCLD DUP 'DEDCONT? STO
+
+  (If we're continuing, silently drop the error state.)
+  ':: #3 DROPN ;
+
+  (Otherwise see if we're meant to single step or trace back.)
+  '::
+    (BREAKSST? and the Interrupt flag were both true: single step.)
+    ':: DROP DROP SST ;
+    (Otherwise, trace back.)
+    '::
+      (Clear the error flag.)
+      #0 'ISDED? STO
+
+      (First build up a list of contexts.  We know we're done
+       when we find a self-referential one.)
+      {} I*.getcontext I*.nextcontext
+      '::
+        DUP DUP I*.nextcontext SAME
+        ':: SWAP + #0 ; 
+        ':: DUP #3 ROLL + SWAP I*.nextcontext #1 ; 
+        IFTE ;
+      REP
+
+      (Ensure we have a valid traceback depth.)
+      'TRACE? EXISTS
+      ':: 'TRACE? RCL TYPE `Types.Integer == ;
+      #0 IFTE 
+      NOT ':: #-1 'TRACE? STO ; IFT
+      
+      (Trim the list of contexts according to tracedepth, within reason.)
+      DUP LEN TRACE? - #1 - DUP #0 < ':: DROP #0 ; IFT RIGHT
+
+      (Then call our traceback routine, if it exists.)
+      'ANSI.errtrace ':: DROP DROP ; RCLD EVAL
+
+      (And reset to whichever context is appropriate.)
+      BAIL! ;
+    IFTE ;
+  IFTE ;
+(Do not presume to use the default ERRTRACE builtin.)
+{ ERRTRACE }
+STATIC
+'EXCEPT STO
+
+(Cheekily obtain the runtime's Return internal and hang onto it.)
+':: ; #0 I*.get 'I*.semicolon STO
+
+(A single stepper using our type coloring routines, take 2 or 3.  Some of
+ this is implemented with internals just to keep error messages from getting
+ clobbered.)
+'::
+  (!SST)
+  (First grab the relevant parts of our previous context.)
+  I*.getcontext I*.nextcontext I*.context> I*.drop I*.drop
+  (Now: is the next thing a return or another SST?  If so, clean up,
+   silently step again.)
+  I*.dup2 I*.get I*.dup I*.dup 'I*.semicolon I*.==ref
+  I*.swap 'SST I*.== I*.or
+  ':: #4 I*.dropn 'SST 'I*.evalnext I*.beval ; I*.ift
+  (It's not.  So unless it's a humble request to stop stepping, proceed.)
+  '(!SST) I*.!=
+  ':: 
+    (Print the header with next object highlighted.)
+    #3 ROLL ANSI.highlight 
+    ANSI.codes.clear "Single stepping, call depth " + SWAP + DISP
+    { :: idx ip ==
+        ANSI.codes.cyan
+        ""
+        IFTE ; }
+    Types.n LEN *
+    ':: izer newline ; { colors ip :idx: #-1 :depth: #2 } ANSI.default.environment 
+    "" DISP
+    '::
+      (We come back from evalnext into this second half.  And
+       check again for an !SST, as may happen with an EXCEPT call.
+       Internals are used here to preserve the error state, if any.)
+      I*.getcontext I*.nextcontext I*.context> I*.drop I*.drop I*.get
+      I*.swap I*.drop '(!SST) I*.!=
+      '::
+        "" DISP
+        ':: ANSI.ize.stack ; { :depth: #2 } ANSI.default.environment
+        "Enter to step, break, shell, or resume: " 
+        #1 'DEDCONT? STO PROMPT #0 'DEDCONT? STO
+        { { :: "b" == ; 
+            :: "SST break" 'DED BEVAL (bail just from here) ; }
+          { :: "s" == ;  REPL }
+          { :: "r" == ;  (keep on truckin') }
+          { ELSE         SST } } 
+        KCASE ;
+      I*.ift ;
+    (And for now, step.)
+    'I*.evalnext BEVAL (x) ;
+  ':: (!SST was encountered, so clean up and drop out.) #3 I*.dropn ;
+  I*.ifte ;
+STATICN
+'SST STO
+
+(SST)
+{ :name: SST
+  :args: #0
+  :hint: "Enter single step debugging mode."
+  :table: { { SST } } }
+I*.stobin
+

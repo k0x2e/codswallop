@@ -1,0 +1,177 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Standard library )
+
+(This is the standard library, containing the most useful routines not
+ implemented in the interpreter itself, including the REPL.)
+
+(CASE.  Takes a list in the form of:
+ { { if-case then-case }
+   { if-case then-case }
+   ... } )
+{ (case goes here) Types.List }
+'::
+  '::
+    _cases LEN (Don't even try if there's no cases to check.)
+    '::
+      ':: (Open our case, evaluate the if block.)
+        _cases _index GET #0 GETE 
+        (Keep track of the result for ourselves; if needed, fetch then block.) 
+        DUP NOT '_keeptry STO 
+        ':: _cases _index GET #1 GET ; IFT
+        (Now increment our index and see if it's time to repeat.)
+        _index #1 + DUP '_index STO
+        _cases LEN < _keeptry AND ;
+      REP
+      (If we fetched a then block, evaluate it here as a tail call.)
+      _keeptry NOT 'BEVAL IFT () ;
+    IFT ;
+  { :_index:#0 :_keeptry:#1 _cases :ELSE:#1 }
+  LOCAL ;
+{} STATIC #0 PUT #1 >LST
+#1 "Takes a case list in the form of { { if-case then-case } ... } and evaluates only the first match."
+'CASE >BIN
+'CASE STO
+
+(KCASE: supply a constant for each case.  Takes two arguments:
+ the test value and the CASE style list.)
+{ (kcase goes here) `Types.Any `Types.List }
+'::
+  '::
+    _cases LEN (Don't even try if there's no cases to check.)
+    '::
+      ':: (Open our case, recall our constant, and evaluate the if block.)
+        _k _cases _index GET #0 GETE 
+        (Keep track of the result for ourselves; if needed, fetch then block.) 
+        DUP NOT '_keeptry STO 
+        ':: _cases _index GET #1 GET ; IFT
+        (Now increment our index and see if it's time to repeat.)
+        _index #1 + DUP '_index STO
+        _cases LEN < _keeptry AND ;
+      REP
+      (If we fetched a then block, evaluate it here as a tail call.)
+      _keeptry NOT 'BEVAL IFT () ;
+    IFT ;
+  { :_index:#0 :_keeptry:#1 _cases _k :ELSE::: DROP #1 ; }
+  LOCAL ;
+{} STATIC #0 PUT #1 >LST
+#2 "Modified CASE which takes two arguments, a test value and a CASE list.  Supplies the constant for each if-case."
+'KCASE >BIN
+'KCASE STO
+
+':: (PROFILE: Figure evaluation time for an object.)
+  EPOCH ':: EVAL EPOCH _profiletime - ; 
+  { _profiletime } LOCAL ;
+{} STATIC
+'PROFILE STO
+
+':: (PAUSE: Press enter to continue.)
+  #1 DEDCONT "(Enter) " PROMPT DROP #0 DEDCONT ;
+'PAUSE STO
+
+(FOREACH: For each item in list or code, push it to the stack and evaluate 
+ a thing. For example, 0 { 1 2 3 } '+' FOREACH evaluates 0 1 + 2 + 3 +.
+ An update callback will store an item back to that spot in the list.)
+
+':: SWAP DUP LEN SWAP QUOTE
+  ':: list
+    idx #1 + DUP 'idx STO
+    length >=
+    'BAIL IFT 
+    idx GET evaluator
+    SELF EVAL ;
+  { :update: :: list SWAP idx PUT QUOTE 'list STO ;
+    :idx: #-1
+    list length evaluator } LOCAL 
+  (This comment prevents tail call optimization, which can cause unexpected
+   behavior if the evaluator code recurses.) ;
+STATICN
+'FOREACH STO
+
+(Now make it a builtin.)
+{ { FOREACH Types.List Types.Any }
+  { FOREACH Types.Code Types.Any } }
+#2
+"For each element of code or a list in line 2, place the element on the
+stack and evaluate line 1.  'update' can be called to store a new element
+in that location.  Returns the code or list."
+'FOREACH
+>BIN 'FOREACH STO
+
+(Split a string around a delimiter.)
+':: SWAP DUP LEN
+  '::
+    (Our list.) {}
+    length
+    '::
+      ':: (Our string.) ""
+        ':: string idx GET DUP delim ==
+          ':: DROP #0 ;
+          ':: + #1 ; 
+          IFTE
+          idx #1 + DUP 'idx STO length < AND ;
+        REP + idx length < ; 
+      REP ;
+    IFT ;
+  { length string delim :idx:#0 } LOCAL ;
+{} STATIC 
+'SPLIT STO
+
+{ :name: SPLIT
+  :args: #2
+  :hint: "Make a list of all substrings of line 2, separated by the delimiter on line 1."
+  :table: { { SPLIT Types.String Types.String } } }
+I*.stobin
+
+(Read, evaluate, print, loop.)
+'::
+  (Hang on to our current call depth for the prompt loop, and for evaluation.)
+  DEPTH DUP
+  (Clear errors and prompt for text.)
+  #0 'ISDED? STO #1 'DEDCONT? STO
+  (This loop lets multiple lines be entered, with some helpful prompts.)
+  "" SWAP (our string, gently pushed out of DEPTH's way)
+  #0 (line counter)
+  '::
+    '::
+      (Let the user know if they are in a nested REPL.)
+      depth ':: "(" depth + ") " + ; "" IFTE
+      cont DUP #1 + 'cont STO  (Increment our line counter)
+      "..?  " ":: " IFTE + PROMPT  (Choose initial/continuation prompt)
+      ISDED?
+      ':: DROP #0 ; (Error case)
+      ':: DUP #1 RIGHT "\\" ==
+        (Strip backslash if one exists, add newline and ask for more.)
+        ':: DUP LEN #1 - LEFT + #10 >ASC + #1 ;
+        (Otherwise, add this line to our thing and stop repeating.)
+        ':: + #0 ;
+        IFTE ;
+      IFTE ;
+    REP ;
+  { cont depth }
+  LOCAL
+  (Now, see if we got through it without ctrl-c or ctrl-d.)
+  ISDED?
+  ':: (Yes we're dead: bail.) 
+    #0 'DEDCONT? STO
+    DROP 
+    (Bid a fond farewell if leaving the initial REPL.)
+    NOT ':: "" DISP "See you space cowboy..." DISP ; IFT
+    BAIL ; 
+  ':: (No, let's try to parse what we got.)
+    " ;" + ":: " SWAP + PARSE ISDED?
+    ':: (If it didn't work out, drop the leftover string and DEPTH, and loop.) 
+      DROP DROP ;
+    ':: (If it did work, turn errors back on and evaluate what we got.)
+      #0 'DEDCONT? STO 
+      SWAP ':: EVAL ; { TRACE? } LOCAL ;
+    IFTE ;
+  IFTE 
+  (!SST) (Don't let SST step through the REPL.)
+  (Now print our stack if some fancypants color is available.)
+  "" DISP
+  'ANSI.stack EXISTS 'ANSI.stack 
+  IFT 
+  REPL ;
+{} STATIC
+'REPL STO
