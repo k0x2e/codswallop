@@ -125,13 +125,19 @@ def parsecomposite(token, obj, delta, delimiter):
     token.invalidate('Consider ending this '+obj.typename+' with a '+delimiter, cursor)
 
 
-# Check to see if text contains any symbolic naughties.
+# Check to see if text contains any symbolic naughties or null segments, and
+# return a list of names if not.
 def validatename(text):
-  for i in range(len(text)):
-    if text[i] in parsetoken.delimiters or\
-       text[i] in parsetoken.whitespace:
-      return False
-  return True
+  names = text.split('.')
+  for j in names:
+    if len(j):
+      for i in j:
+        if i in parsetoken.delimiters or\
+           i in parsetoken.whitespace:
+          return
+    else:
+      return
+  return names
 
 # Squeeze one object out of text.
 def parse(runtime, text):

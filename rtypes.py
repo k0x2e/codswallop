@@ -313,10 +313,11 @@ class typesym(objarchetype):
   def parse(token):    
     cursor = token.cursor
     ourtext, cursor = parse.getstring(token.text, cursor, token.whitespace)
-    
-    if parse.validatename(ourtext):
-      # Split up our directory tree here.
-      ourtext = ourtext.split('.')
+    ourtext = parse.validatename(ourtext)
+    if ourtext is None:
+      # Reject names with delimiters or names with null segments.
+      token.invalidate("Are you trying to break shit with delimiters in symbol names?")
+    else:
       # Alternate flag indicates a request to recall the symbol right now.
       if token.alternate:
         thing = token.runtime.rcl(ourtext)
@@ -326,8 +327,6 @@ class typesym(objarchetype):
           token.validnext(thing, cursor)
       else:
         token.validnext(typesym(ourtext), cursor)
-    else:
-      token.invalidate("Are you trying to break shit with delimiters in symbol names?")
   
   # Evaluating a symbol attempts to retrieve it by name and evaluate that.
   def eval(self, runtime):

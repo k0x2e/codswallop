@@ -131,8 +131,11 @@ I*.stobin
             { `:: >STR I*.disp ; Types.Any } } }
 I*.stobin
 
-(String concatenation stuff dependent upon >STR.)
-{ { I*.+str Types.String Types.String }
-  { `:: I*.swap >STR I*.swap I*.+str ; Types.Any Types.String }
-  { `:: >STR I*.+str ; Types.String Types.Any } }
-`'+ I*.binhook I*.drop
+(String concatenation stuff dependent upon >STR.  For the moment this
+ is hardcoded, but eventually dispatch tables will be possible to merge.)
+`'+ I*.bin> #4 I*.pick
+`{ :: I*.swap >STR I*.swap I*.+str ; Types.Any Types.String }
+#9 I*.put
+`{ :: >STR I*.+str ; Types.String Types.Any }
+#7 I*.put
+`'+ I*.swap I*.setdispatch #4 I*.dropn

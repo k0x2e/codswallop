@@ -1079,14 +1079,15 @@ def makebinprocs():
       return rt.Context.eval
   bins += [['parse', x]]
   
-  # To function.
+  # To symbol.
   def x(rt):
     ourstring = rt.Stack.pop()
-    if parse.validatename(ourstring.data):
-      rt.Stack.push(rtypes.typesym(ourstring.data.split('.')))
-    else:
+    ourname = parse.validatename(ourstring.data)
+    if ourname is None:
       rt.Stack.push(ourstring)
       return rt.ded("This can be a string, but it won't be a symbol")
+    else:
+      rt.Stack.push(rtypes.typesym(ourname))
     return rt.Context.eval
   bins += [['str>sym', x]]
 
