@@ -1,0 +1,1465 @@
+(The Wizard's Castle, not a direct BASIC source port this time.
+ It is incomplete, but shows a little more of how more interesting features
+ of the language can be used to do it better.)
+
+(Reload this thing.)
+':: "newwiz.rpl" DSK> ; 'rl STO
+
+(***** Common functions and constants
+       These routines are used all over the place for various purposes.)
+
+(True and false shorthand.)
+#0 'False STO
+#1 'True STO
+
+(Pick the lesser of two numbers.)
+':: DUP2 < #3 ROLLD IFTE ;
+'lesser STO
+
+(Roll one die of x sides.)
+':: RND * >INT #1 + ;
+'rollone STO
+
+(Roll one die of x sides, but from 0.)
+':: RND * >INT ;
+'roll0 STO
+
+(Evaluate an item out of a list at random.)
+':: DUP LEN roll0 GETE ;
+'evalrandom STO
+
+(D&D style roll.  Takes three arguments:
+ 3: Number of dice
+ 2: Number of sides
+ 1: Handicap)
+'::
+  '::
+    #0
+    '::
+      sides rollone +
+      number #1 - DUP 'number STO ;
+    REP
+    handicap + ;
+  { handicap sides number } LOCAL ;
+'rolldnd STO
+
+(Wrap a coordinate so that it falls within our map.)
+'::
+  { { :: #7 > ; #0 }
+    { :: #0 < ; #7 }
+    { True (Return original) } }
+  KCASE ;
+'wrapcoordinate STO
+
+(Bind a character status to the global limit of 0-18.)
+'::
+  { { :: #18 > ; #18 }
+    { :: #0 < ; #0 }
+    { True (Return original) } }
+   KCASE ;
+'bindstat STO
+  
+(Pick a random place on the map.  Returns three 1d8's.)
+':: #8 roll0 ; #3 *
+'randomplace STO
+
+
+(***** Important new technique
+       In several places, complex routines are separated into smaller
+       functions in a directory for legibility and easier debugging.
+       This function facilitates automated evaluation of a whole directory.)
+
+(Evaluate every object in a directory, in order.)
+'::
+  (Take a symbol, quote it for ourdirectory, and
+   grab the directory listing.)
+  DUP EVAL DIR SWAP QUOTE
+  '::
+    (Qualify each name and evaluate it.)
+    ':: ourdirectory SWAP + EVAL ;
+    FOREACH DROP ;
+  { ourdirectory } LOCAL ;
+'evaldir STO
+
+
+(***** Interface helpers
+       These routines are used here and there to deal with prompts and
+       other miscellaneous display functions.)
+
+(Complain about something.  Takes a string and prints it.)
+'::
+  "** " ANSI.highlight SWAP + DISP ;
+'complain STO
+
+(Issue a newline.)
+':: "" DISP ;
+'newline STO
+
+(Return a location string from XYZ coordinates on stack.)
+'::
+  ") level " SWAP + +
+  ", " SWAP + +
+  "(" SWAP + ;
+'locationstring STO
+
+(Keep asking the user for an acceptable answer.  Takes a validator,
+ a prompt, and a chide.  If chide returns a null string, the original
+ prompt is repeated with attention asterisks.)
+'::
+  '::
+    prompt
+    '::
+      PROMPT DUP validator
+      (Stop repeating if the validator said we're good.)
+      False
+      (Otherwise chide and re-prompt or just re-prompt if theres no chide.)
+      ':: 
+        DROP chide LEN
+        ':: chide complain prompt ;
+        ':: "** " ANSI.highlight prompt + ;
+        IFTE
+        newline True ;
+      IFTE ;
+   REP ;
+  { chide prompt validator } LOCAL ;
+'validateprompt STO
+
+(Check to see if a string starts with a number, a little hand up for input
+ validation.)
+'::
+  #1 LEFT
+  { "0" "1" "2" "3" "4" "5" "6" "7" "8" "9" }
+  SWAP HAS ;
+'isnumeric STO
+
+(Ask for just a yes or no answer and return a boolean.  Takes a prompt.)
+':: 
+  ':: { "y" "n" } SWAP HAS ;
+  SWAP
+  "Please answer yes or no"
+  validateprompt 
+  "y" == ;
+'johnnyyesno STO
+
+(Display the map, with a display list for the right column.)
+'::
+  '::
+    '::
+      (Only show the map data if not blind.)
+      Player.blind NOT
+      '::
+        #0 'x STO
+        ':: 
+          x y Player.Z Carto.getroom
+          ':: 
+            (Brackets around player location.)
+            x Player.X == y Player.Y == AND 
+            ':: "<" showviz  + ">" ;
+            ':: " " showviz  + " " ;
+            IFTE 
+            + DISPN ;
+          { Here } LOCAL
+          x #1 + DUP 'x STO #8 < ;
+        REP ;
+      IFT
+      (In either case, show the appropriate sidebar line.)
+      "         "
+      Rules.Sidebar y GETE + DISP
+      y #1 + DUP 'y STO #8 < ; 
+    REP ;
+  { :x: #0 :y: #0 
+    :showviz:
+      ::
+        Player.cheating Here.visible OR
+        Here.icon "?" IFTE ; }
+  LOCAL ;
+'dispmap STO
+
+
+(Fight mechanics.)
+':: "You are facing " Here.desc + "!" + DISP ;
+'fite! STO
+
+(Take damage.  Accepts an amount of damage and an object, subtracts 
+ hitpoints and armor health as necessary, and evaluates the object if
+ we didn't die.)
+'::
+  (If we have any hits left on the armor, apply damage to armor first.)
+  Player.armor.hits
+  '::
+    (Take the lesser of the damage, armor hits, and armor class.)
+    DUP
+    Player.armor.class lesser Player.armor.hits lesser
+    (Store back but also keep the remaining hits.)
+    DUP Player.armor.hits SWAP - DUP 'Player.armor.hits STO
+    (Clear out the armor if hits have reached zero.)
+    NOT
+    '::
+      "Your armor has been destroyed . . . good luck!" DISP 
+      Archetypes.Armor.None 'Player.armor STO ;
+    IFT
+    (Subtract the points the armor just absorbed.) 
+    - ;
+  IFT
+  (Remaining damage goes to player strength.)
+  Player.strength SWAP - bindstat 'Player.strength STO ;
+'takedamage STO
+
+
+(***** Game loops
+       The outer and inner loops handle the rolling of new characters and
+       dungeons, and the dungeon crawling gameplay respectively.)
+
+(Outer game loop.  This is responsible for building the dungeon, loading the
+ default player state, and starting the inner loop that prompts for
+ commands.)
+'::
+  '::
+    (Make a copy of our player variables to store locally.)
+    Archetypes.Player CP
+    '::
+      (Make a new map by evaluating every object in the Rules.Map directory.)
+      'Rules.Map evaldir
+      (Roll a new character in the same way.)
+      'Rules.Character evaldir
+      (Then trigger a movement, and start the loop.)
+      Actions.move innerloop 
+
+      (Ask if we're playing again and return true or false to the outer loop.)
+      newline
+      "Would you like to play again? " johnnyyesno 
+      DUP NOT
+      ':: 
+        "Maybe dumb " Player.species + " is not so dumb after all!" + DISP ;
+      IFT ;
+    { Player :Map: {} :Here: () :Zot: {} } 
+    LOCAL ;
+  REP ;
+'game STO
+
+(Get a command.  This is the inner loop.)
+'::
+
+  (Show the map and roll for ambient noises.)
+  newline dispmap newline
+  Rules.Ambiance
+
+  (Prompt for a command, save it and clear the screen.)
+  "Enter your command : " PROMPT
+  DUP 'Player.lastcommand STO
+  ANSI.codes.clear DISPN
+
+  (To process a command, we combine the possible actions from this square
+   with the global possibilities, so local actions take precedence.)
+  Here.actions Rules.Actions + KCASE
+  
+  (Increment our turn.)
+  Player.turns #1 + 'Player.turns STO 
+
+  (Now, check for cures and curses.)
+  Rules.Cursebreak Rules.Cursedturn
+
+  (XXX Debugging tool: catch if we leaked anything to the stack.)
+  STACK LEN ':: "leaky!" DED ; IFT
+  
+  (Check to see if we died.)
+  Player.strength Player.intelligence AND 
+  Player.dexterity AND NOT
+  'Endgame.keel IFT
+
+  (Now choose between looping and dropping out with a summary.)
+  Player.playing
+  'innerloop 'Endgame.summary IFTE ;
+'innerloop STO
+
+(***** Cartography
+       These routines handle all the reading and updating of the dungeon map.
+       They're used by the mapmaking rules and all through the game to fetch
+       and modify rooms.)
+
+[dir:
+  :emptyhere:
+    ::
+      (Empty out the room under the player's feet.
+       None -> None)
+      Player.X Player.Y Player.Z Archetypes.Room.Empty CP
+      'Here STO
+      True 'Here.visible STO Here Carto.storoom ;
+
+  :storoom:
+    ::
+      (Write a room into the map.
+       4: X, 3: Y, 2: Z, 1: Room -> None)
+      '::
+        Map DUP z GET DUP y GET
+        arch x PUT
+        y PUT z PUT 
+        'Map STO ; 
+      { arch z y x } LOCAL ;
+
+  :stocopy:
+    :: 
+      (Store a copy of a room archetype.  Making a copy prevents the
+       original from being overwritten during gameplay.
+       4: X, 3: Y, 2: Z, 1: Room archetype -> None)
+      CP Carto.storoom ;
+
+  :stoitem:
+    ::
+      (Store an item into a room, and then store the room.
+       4: X, 3: Y, 2: Z, 1: Item archetype -> None)
+      Archetypes.Room.Item CP
+      '::
+        item.desc 'room.desc STO
+        item.icon 'room.icon STO
+        'item.get RCL 'room.get STO
+        room Carto.storoom ;
+      { room item } LOCAL ;
+
+  :stoenemy:
+    ::
+      (Store an enemy into a room, and then store the room.
+       4: X, 3: Y, 2: Z, 1: Enemy archetype -> None)
+      Archetypes.Room.Enemy CP
+      '::
+        enemy.article enemy.name + 'room.desc STO
+        enemy CP 'room.enemy STO
+        staff 'room.enemy.runestaff STO
+        room Carto.storoom ;
+      { room staff enemy } LOCAL ;
+
+  :stotreasure:
+    ::
+      (Store treasure into a room, and then store the room.
+       4: X, 3: Y, 2: Z, 1: Treasure archetype -> None)
+      Archetypes.Room.Item CP
+      '::
+        "The " treasure.name + 'room.desc STO
+        "T" 'room.icon STO
+        treasure 'room.item STO
+        (The action for landing on a treasure is always the same.)
+        'Actions.loot 'room.get STO
+        room Carto.storoom ;
+      { room treasure } LOCAL ;
+
+  :stotrap:
+    ::
+      (Set a trap in an empty room, then store the room.
+       4: X, 3: Y, 2: Z, 1: Trap symbol -> None)
+      QUOTE Archetypes.Room.Empty CP
+      '::
+        'room.curse STO
+        ':: "A disembodied voice whispers \"Curssssseddddd...\"" DISP
+          Here.curse Actions.getcursed ;
+        'room.onarrival STO 
+        room Carto.storoom ;
+      { room } LOCAL ;
+ 
+  :getroom:
+    :: 
+      (Get a room [you two!]
+       3: X, 2: Y, 1: Z -> Room directory)
+      Map SWAP GET SWAP GET SWAP GET ;
+
+  :markvisible:
+    :: 
+      (Safely mark a room visible.
+       3: X, 2: Y, 1: Z -> None)
+      (Only seeing players can remember where they've been.)
+      Player.blind NOT
+      ':: #3 DUPN Carto.getroom
+        '::
+          (Make a copy of an empty room if we're looking at an original
+           archetype instead of a copy.  Otherwise all empties will get
+           marked visible.)
+          room Archetypes.Room.Empty SAME
+          ':: room CP 'room STO ; IFT
+          True 'room.visible STO
+          x y z room Carto.storoom ;
+        { room z y x } LOCAL ;
+      ':: #3 DROPN ; IFTE ;
+
+  :markinvisible:
+    ::
+      (Forget what was in a space.
+       3: X, 2: Y, 1: Z -> None)
+      #3 DUPN Carto.getroom
+      ':: 
+        (Only clear visibility for visible rooms.)
+        room.visible
+        ':: False 'room.visible STO ;
+        IFT ;
+      { room z y x } LOCAL ;
+
+  :findempty:
+    ::
+      (Find an empty square on level Z.
+       1: Z -> 3: X, 2: Y, 1: Z)
+      Archetypes.Room.Empty
+      ':: 
+        '::
+          (Roll two and see if the spot we land on is empty.) 
+          #8 roll0 #8 roll0 DUP2 z Carto.getroom empty SAME
+          False (If empty, we're done.)
+          ':: DROP DROP True ; (Otherwise, forget our spot and re-roll.)
+          IFTE ;
+        REP z ;
+      { empty z } LOCAL ; ]
+'Carto STO
+
+
+(***** Endgame
+       These routines show the various types of end matter when the game
+       is over.)
+[dir:
+  :leave:
+    ::
+      (Leaving the castle by choice.
+       None -> None)
+      newline "You left the castle with" Player.orbzot NOT 
+      ':: "out" + ; IFT " the Orb of Zot." + DISP newline
+      Endgame.quit ;
+
+  :quit:
+    ::
+      (Show a nice header for when we leave or quit rather than die.
+       None -> None)
+      Player.orbzot
+      "An incredibly glorious victory!!"
+      "A less than awe-inspiring defeat."
+      IFTE DISP newline Player.orbzot
+      "In addition, you got out with the following:"
+      "When you left the castle, you had:"
+      IFTE DISP 
+      False 'Player.playing STO ;
+
+  :keel:
+    ::
+      (Leaving the castle not at all by choice.
+       None -> None)
+      newline
+      "*" #64 * DISP
+      newline
+      "A noble effort, oh formerly living " Player.species + "!" + DISP
+      newline
+      "You died due to lack of "
+      { { :: Player.strength NOT ; "strength." }
+        { :: Player.intelligence NOT ; "intelligence." }
+        { :: Player.dexterity NOT ; "dexterity." } }
+      CASE + DISP newline 
+      "At the time you died, you had:" DISP 
+      False 'Player.playing STO ;
+
+  :summary:
+    ::
+      (Show a final summary of the game.
+       None -> None)
+      newline
+      (Your life?)
+      Player.strength Player.dexterity AND Player.intelligence AND
+      ':: "Your miserable life!" DISP ; IFT
+
+      (A list of treasures)
+      Player.treasures
+      ':: ':: "The " treasure.name + DISP ; { treasure } LOCAL ;
+      FOREACH DROP
+
+      (Equipment summary)
+      "Equipment: " Player.weapon.name +
+      " and " + Player.armor.name +
+      Player.lamp ':: " and a lamp" + ; IFT DISP
+      "You also had " Player.flares + " flares and " + Player.gold + 
+      " gold pieces" + DISP
+      Player.runestaff ':: "And the runestaff" DISP ; IFT
+
+      (And that's it.)
+      newline
+      "And it took you " Player.turns + " turns!" + DISP ; ]
+'Endgame STO
+
+(***** Rules
+       This is a collection of lists, directories, and routines that 
+       represent the rules of the game.)
+
+MKDIR 'Rules STO
+
+(Rules for making a map.)
+[dir:
+  :Dungeon:
+    ::
+      (First rule of mapmaking: have a map.)
+      (Make one row of empty rooms.)
+      Archetypes.Room.Empty #1 >LST #8 *
+      (Make one level of rows.)
+      #1 >LST #8 *
+      (And make one dungeon of levels.)
+      #1 >LST #8 *
+      'Map STO ;
+
+  :Entrance:
+    ::
+      (Entrance goes at 3,0,0.)
+      #3 #0 #0 Archetypes.Room.Entrance Carto.stocopy ;
+
+  :Stairs:
+    ::
+      '::
+        '::
+          (For levels 0-6, two staircases and matching ones on next level.)
+          '::
+            z Carto.findempty #3 DUPN
+            Archetypes.Room.Downstairs Carto.stocopy
+            #1 + Archetypes.Room.Upstairs Carto.stocopy ;
+          DUP EVAL EVAL
+          z #1 + DUP 'z STO #7 < ;
+        REP ;
+      { :z: #0 } LOCAL ;
+
+   :Enemies:
+     ::
+       '::
+         '::
+           (For each level, one of each enemy except vendor, sans runestaff.)
+           Archetypes.Enemies DUP LEN #1 - LEFT
+           ':: z Carto.findempty #4 ROLL False Carto.stoenemy ;
+           FOREACH DROP
+           z DUP #1 - 'z STO ;
+         REP ;
+       { :z: #7 } LOCAL ;
+
+   :Items:
+     :: 
+       (For each level, three each of chests, orbs, etc.)
+       '::
+         '::
+           { Archetypes.Room.Warp Archetypes.Room.Pool Archetypes.Room.Orb
+             Archetypes.Room.Vendor Archetypes.Room.Sinkhole
+             Archetypes.Room.Book Archetypes.Room.Chest }
+           ':: EVAL z Carto.findempty #4 ROLL Carto.stocopy ;
+           FOREACH DROP
+           { Archetypes.Item.Gold Archetypes.Item.Flares }
+           ':: EVAL z Carto.findempty #4 ROLL Carto.stoitem ;
+           FOREACH DROP ;
+         #3 *
+         ':: z DUP #1 - 'z STO ; +
+         REP ;
+       { :z: #7 } LOCAL ;
+
+    :Treasure:
+      ::
+        (For each treasure, drop it somewhere.)
+        Archetypes.Treasure
+        ':: #8 roll0 Carto.findempty #4 ROLL Carto.stotreasure ;
+        FOREACH DROP ;
+
+    :Traps:
+      ::
+        (For each trap, drop it somewhere empty.)
+        Archetypes.Trap
+        ':: #8 roll0 Carto.findempty #4 ROLL QUOTE Carto.stotrap ;
+        FOREACH DROP ;
+
+    :Runestaff:
+      :: (A random non-vendor enemy on a random level has a runestaff.)
+        #8 roll0 Carto.findempty
+        Archetypes.Enemies DUP LEN #1 - roll0 GET
+        True (This one has the staff!)
+        Carto.stoenemy ;
+
+    :Zotorb:
+      :: (Find an open spot on a random level for our Orb of Zot.)
+         #8 roll0 Carto.findempty 
+         (Hang onto this location for gazing purposes.)
+         #3 DUPN #3 >LST 'Zot STO
+         Archetypes.Room.Zotorb Carto.stocopy ;
+  ]
+'Rules.Map STO
+
+(Rules for rolling a new character.)
+[dir:
+  :Species:
+    ::
+      (Build a new character.
+       None -> 1: Integer attribute points)
+      "All right, bold one." DISP
+      "You may be an elf, dwarf, man, or hobbit." DISP
+      ':: >SYM Abbreviations.Species DIR SWAP HAS ;
+      "Your choice? "
+      "That was incorrect.  Please type something correct."
+      validateprompt
+      
+      (Look up our species by symbol and store its bits.)
+      >SYM 'Abbreviations.Species SWAP + EVAL
+      '::
+        species.name 'Player.species STO 
+        species.strength 'Player.strength STO
+        species.intelligence 'Player.intelligence STO 
+        species.dexterity 'Player.dexterity STO
+        (Extra points get left on the stack for a little later.)
+        species.extras ; 
+      { species } LOCAL ;
+
+  :Sex:
+    ::
+      (Now inquire about sex, and store it as a boolean.  There are more
+       than two genders, just not in this game.)
+      ':: { "m" "f" } SWAP HAS ;
+      "Which sex do you prefer? "
+      "Cute, " Player.species + ", real cute.  Try m or f." +
+      validateprompt
+      "m" == 'Player.sex STO 
+      newline ;
+
+  :Stats:
+    ::
+      (Add extra points to our stats.
+       1: Integer attribute points -> None)
+      "Ok, " Player.species + ", you have the following attributes:" + DISP
+
+      (We need to display and hang onto our extra points.) 
+      DUP
+      "Strength " Player.strength + ", Intelligence " + Player.intelligence +
+      ", Dexterity " + Player.dexterity + "," + DISP
+      "and " SWAP + " other points to allocate as you wish." + DISP
+      newline
+     
+      (Add extra points left on stack from Species rule to our stats.)
+      ':: 
+        { strength intelligence dexterity }
+        '::
+          (Only prompt if there are points left to allocate.)
+          remaining
+          '::
+            (Qualify our stat, save it and fetch its value too.)
+            (This leaves us e.g. with strength, Player.strength, #8.)
+            DUP 'Player SWAP + DUP RCL
+            (Now get a good number.)
+            ':: 
+              (Make sure user typed something numeric.)
+              DUP isnumeric SWAP
+              (And that something was in range.)
+              VAL DUP remaining <= SWAP #0 >= AND AND ;
+            "How many points would you like to add to your " #5 ROLL + "? " +
+            ""
+            validateprompt
+            (remaining -= result and stat += result)
+            VAL >INT DUP 
+            remaining SWAP - 'remaining STO
+            + SWAP STO ;
+          (Forget our stat if we're not gonna use it.)
+          'DROP 
+          IFTE ;
+         FOREACH DROP ;
+      { remaining } LOCAL ;
+
+  :Armor:
+    :: (Temp) Archetypes.Armor.Leather CP 'Player.armor STO ;
+
+  :Weapon:
+    :: (Temp) Archetypes.Weapon #1 GET 'Player.weapon STO ;
+
+  :Lamp:
+    :: 
+      (Only prompt if we have money.)
+      Player.gold #20 >=
+      '::
+        "Do you want to buy a lamp for 20 GP's? "
+        johnnyyesno 
+        '::
+          Player.gold #20 - 'Player.gold STO
+          True 'Player.lamp STO ;
+        IFT ;
+      IFT ;
+
+  :Flares:
+    ::
+      (Only prompt if we have money.)
+      Player.gold
+      '::
+        newline
+        "Ok, " Player.species + ", you have " + Player.gold +
+        " gold pieces left." + DISP newline
+        ':: DUP isnumeric SWAP VAL DUP #0 >= SWAP Player.gold <= AND AND ; 
+        "Flares cost 1 GP each.  How many do you want? "
+        "You can only afford " Player.gold + 
+        ".  If you don't want any, just type 0 (zero)." +
+        validateprompt
+        (Add to flares, subtract from gold.)
+        VAL >INT DUP 
+        Player.flares + 'Player.flares STO
+        Player.gold SWAP - 'Player.gold STO ;
+      IFT ;
+
+  :Go:
+    :: 
+      "Ok, " Player.species + ", you are now entering the castle!" + DISP ;
+]
+'Rules.Character STO
+
+(General rules for commands; these can be overridden by rooms.)
+{ { :: "n" == ; Actions.north }
+  { :: "s" == ; Actions.south }
+  { :: "e" == ; Actions.east }
+  { :: "w" == ; Actions.west }
+  { :: "f" == ; Actions.flare }
+  { :: "t" == ; Actions.teleport }
+  { :: #1 LEFT "l" == ; Actions.lamp }
+  { :: "repl" == ; REPL }
+  { :: "sst" == ; SST }
+  { :: "cheat" == ;
+    :: True 'Player.cheating STO ; }
+  { :: "u" == ;
+    :: "There are no stairs going up from here!" complain ; }
+  { :: "d" == ;
+    :: "There are no stairs going down from here!" complain ; }
+  { :: "g" == ;
+    :: "It's hard to gaze without an orb!" complain ; }
+  { :: "dr" == ;
+    :: "If you want a drink, find a pool!" complain ; } 
+  { :: "o" == ;
+    :: "The only thing that opened was your big mouth!" complain ; } 
+  { :: "q" == ; Actions.quit }
+  { True
+    :: DROP "Silly " Player.species + ", that wasn't a valid command!" +
+      complain ; } 
+  }
+'Rules.Actions STO
+
+(Rule for ambient noises.)
+'::
+  (20% chance of it happening at all.)
+  #5 roll0 NOT
+  ':: 
+    "You "
+    { :: "hear " 
+        { "a scream!" "footsteps!" "a wumpus!" "thunder!" }
+        evalrandom + ;
+      "sneezed!"
+      "stepped on a frog!"
+      :: "smell " Archetypes.Enemies evalrandom
+        ':: enemy.article enemy.name + ; { enemy } LOCAL +
+        " frying!" + ;
+      "feel like you're being watched!"
+      "hear faint rustling noises!" }
+    (Tack on seeing a bat as an option, if we can see.)
+    Player.blind NOT ':: "see a bat fly by!" + ; IFT
+    evalrandom + DISP newline ;
+  IFT ;
+'Rules.Ambiance STO
+
+(Rule for seeing something: do a thing if you can see, don't do a thing and
+ complain if you can't.)
+'::
+  Player.blind
+  ':: "You can't see anything, you dumb " Player.species + "!" +
+    complain  ;
+  #3 ROLL IFTE ;
+'Rules.Blind STO      
+
+(Rules for gazing into an orb.)
+{ "a soap opera rerun!"
+  :: "yourself in a bloody heap!"
+    Player.strength #2 rollone - bindstat 'Player.strength STO ;
+  :: "yourself drinking from a pool and becoming "
+    Archetypes.Specieslist evalrandom 
+    ':: species.article species.name + ; { species } LOCAL + "!" + ;
+  :: Archetypes.Enemies evalrandom
+    ':: enemy.article enemy.name + ; { enemy } LOCAL 
+       " gazing back at you!" + ;
+  :: randomplace #3 DUPN Carto.getroom 
+     #4 ROLLD #3 DUPN Carto.markvisible locationstring SWAP
+    ':: someroom.desc " at " + SWAP + "!" + ;
+    { someroom } LOCAL ;
+  :: #7 rollone #4 <
+    ':: Zot OBJ> DROP ;
+    'randomplace
+    IFTE locationstring
+    "*** THE ORB OF ZOT *** at " SWAP + "!" + ; } 
+'Rules.Gazing STO
+
+(Rules for reading a book.)
+{
+  :: "FLASH!  Oh no, you are now a blind " + Player.species + "!"
+    'Rules.Curses.blindness 'Player.curses.blindness STO ;
+  :: "it sticks to your hands -- you cannot draw your weapon!"
+    'Rules.Curses.stuck 'Player.curses.stuck STO ;
+  :: "it's another book of Zot's poetry -- yecch!" ;
+  :: "it's an old copy of Play" +
+    Archetypes.Specieslist #4 roll0 GETE
+    ':: species.name ; { species } LOCAL + "!" ;
+  :: "it's a manual of dexterity!"
+    #18 'Player.dexterity STO ;
+  :: "it's a manual of strength!"
+    #18 'Player.strength STO ; }
+'Rules.Reading STO
+
+(Rules for drinking from a pool.)
+{ 
+  :: Player.strength #3 rollone + bindstat 'Player.strength STO
+     "feel stronger." ;
+  :: Player.strength #3 rollone - bindstat 'Player.strength STO
+     "feel weaker." ;
+  :: Player.intelligence #3 rollone + bindstat 'Player.intelligence STO
+     "feel smarter." ;
+  :: Player.intelligence #3 rollone - bindstat 'Player.intelligence STO
+     "feel dumber." ;
+  :: Player.dexterity #3 rollone + bindstat 'Player.dexterity STO
+     "feel nimbler." ;
+  :: Player.dexterity #3 rollone - bindstat 'Player.dexterity STO
+     "feel clumsier." ;
+  ::
+    "turn into "
+    '(dummy arguments here) '(for our first DROPs)
+    '::
+      Archetypes.Specieslist evalrandom
+      ':: DROP DROP species.article species.name DUP Player.species == ;
+      { species } LOCAL ;
+    REP 
+    DUP 'Player.species STO + + "!" + ;
+  :: "turn into a " Player.sex DUP NOT 'Player.sex STO
+    ':: "fe" + ; IFT "male!" + ;
+}
+'Rules.Drinking STO 
+
+(Rules for showing sidebar information on the map.)
+{ ::
+    "Equipped with " Player.weapon.name + " and " +
+    Player.armor.name + ;
+  ""
+  ::
+    Player.blind
+    "You are stumbling around blind!"
+    "You are at " Player.X Player.Y Player.Z locationstring +
+    ", " + Player.species + "." + IFTE ;    
+  ""
+  :: "Strength " Player.strength + ", Intelligence " + Player.intelligence +
+    ", Dexterity " + Player.dexterity + ;
+  :: "Treasures " Player.treasures LEN + ", Flares " + Player.flares +
+    ", Gold pieces " + Player.gold + ;
+  ""
+  Player.turns
+}  
+'Rules.Sidebar STO
+
+(Rules for ongoing curses.)
+[dir:
+  :lethargy:
+    :: Player.turns #1 + 'Player.turns STO ;
+  :leech:
+    :: Player.gold #5 rollone - DUP #0 <
+      ':: DROP #0 ; IFT 'Player.gold STO ;
+  :blindness:
+    :: True 'Player.blind STO ;
+  :forgetfulness:
+    :: randomplace Carto.markinvisible ;
+  :stuck:
+    :: True 'Player.stuck STO ; ]
+'Rules.Curses STO
+
+(Curses cured by treasure.)
+[dir:
+  :lethargy:
+    " makes you sprightly again!"
+  :leech:
+    " cinches your coin purse shut!"
+  :blindness:
+    :: False 'Player.blind STO
+      " cures your blindness!" ;
+  :forgetfulness:
+    " sharpens your memory!"
+  :stuck:
+    :: False 'Player.stuck STO
+      " dissolves the book!" ; ]
+'Rules.Cures STO
+
+(Rules for executing curses on each turn.)
+'::
+  (Having the runestaff or the Orb of Zot nullifies all curses.
+   Because being stuck and blind have their own flags, this will
+   not immediately cure those conditions, as with the original game.)
+  Player.runestaff Player.orbzot OR NOT
+  '::
+    Player.curses DIR
+    ':: 'Player.curses SWAP + EVAL ;
+    FOREACH DROP ;
+  IFT ;
+'Rules.Cursedturn STO
+
+(Rules for breaking curses.)
+':: 
+  Player.treasures
+  '::
+    (For each treasure, see if a curse needs cured.)
+    '::
+      'Player.curses treasure.curse + DUP EXISTS
+      '::
+        RM "The " treasure.name +
+        'Rules.Cures treasure.curse + EVAL + DISP ;
+      'DROP
+      IFTE ;
+    { treasure } LOCAL ;
+  FOREACH DROP ;
+'Rules.Cursebreak STO
+
+(Actions.)
+[dir:
+  :north:
+    :: Player.Y #1 - wrapcoordinate 'Player.Y STO Actions.move ;
+
+  :south:
+    :: Player.Y #1 + wrapcoordinate 'Player.Y STO Actions.move ;
+
+  :east:
+    :: Player.X #1 + wrapcoordinate 'Player.X STO Actions.move ; 
+
+  :west:
+    :: Player.X #1 - wrapcoordinate 'Player.X STO Actions.move ;
+
+  :up:
+    :: Player.Z #1 - 'Player.Z STO Actions.move ; 
+
+  :down:
+    :: Player.Z #1 + wrapcoordinate 'Player.Z STO Actions.move ; 
+
+  :flare:
+    :: 
+      ':: Player.flares (Do we even have flares?)
+        '::
+          "Your flare shines brightly out in all directions!" DISP
+          (Use a flare, then illuminate the immediate area.)
+          Player.flares #1 - 'Player.flares STO
+          ':: 
+            '::
+              #-1 'x STO
+              ':: 
+                Player.X x + wrapcoordinate 
+                Player.Y y + wrapcoordinate 
+                Player.Z Carto.markvisible
+                x DUP #1 + 'x STO #1 - ;
+              REP
+              y DUP #1 + 'y STO #1 - ;
+            REP ;
+          { :x: #0 :y: #-1 } LOCAL ;
+        ':: "Hey bright one, you're out of flares!" complain ;
+        IFTE ;
+       Rules.Blind ;
+
+  :lamp:
+    ::
+      ':: (Shine a lamp.  ...do we have a lamp?)
+        Player.lamp
+        '::
+          (The direction is the last letter in our command.)
+          Player.lastcommand #1 RIGHT
+          (Pick among the directions, leaving X, Y, and a validity flag on the stack.)
+          { { :: "n" == ; :: Player.X Player.Y #1 - wrapcoordinate True ; }
+            { :: "s" == ; :: Player.X Player.Y #1 + wrapcoordinate True ; }
+            { :: "e" == ; :: Player.X #1 + wrapcoordinate Player.Y True ; }
+            { :: "w" == ; :: Player.X #1 - wrapcoordinate Player.Y True ; }
+            { True        :: DROP False ; } }
+          KCASE
+          ':: (All is well, shine the lamp!)
+            (Start by making it visible on the map.)
+            Player.Z #3 DUPN Carto.markvisible #3 DUPN
+            (Now show us what we've got.)
+            Carto.getroom
+            '::
+              locationstring "You shine the lamp toward " SWAP + "." + DISP
+              "Flickering in the dim light, you see " lit.desc + "." + DISP ; 
+            { lit } LOCAL ;
+          ':: "That's not a direction, " Player.species + "!" + complain ;
+          IFTE ;
+        ':: "You don't have a lamp, " Player.species + "!" + complain ;
+        IFTE ;
+      Rules.Blind ;
+
+  :teleport:
+    :: Player.runestaff (Do we have the runestaff?)
+      ':: ;
+      ':: "You can't teleport without the runestaff!" complain  ;
+      IFTE ;
+
+  :gaze:
+    ::       
+      ':: "You see " Rules.Gazing evalrandom + DISP ;
+      Rules.Blind ;
+  
+  :drink:
+    :: "You take a drink and " Rules.Drinking evalrandom + DISP ;
+
+  :loot:
+    :: (Get a treasure!)
+      "It's now yours!" DISP
+      Player.treasures Here.item + 'Player.treasures STO ;
+
+  :getcursed:
+    :: (Get cursed by something on the stack.)
+      '::
+        'Rules.Curses newcurse + 'Player.curses newcurse + STO ;
+      { newcurse } LOCAL ;
+
+  :openbook:
+    :: Carto.emptyhere 
+      "You open the book and " Rules.Reading evalrandom + DISP ;
+
+  :openchest:
+    :: Carto.emptyhere
+      "You open the chest and "
+      (This one goes in the list twice to increase its probability.)
+      ':: "find " + #1000 rollone DUP
+        Player.gold + 'Player.gold STO
+        + " gold pieces!" + DISP  ;
+      DUP
+      (This is the rest of the list of possibilities.)
+      {
+        :: "KABOOM!  It explodes!" + DISP
+          #6 rollone takedamage ;
+
+        :: "GAS!!  You stagger from the room!" + DISP
+          Player.turns #20 + 'Player.turns STO 
+          { :: Player.X #1 + wrapcoordinate 'Player.X STO ;
+            :: Player.X #1 - wrapcoordinate 'Player.X STO ;
+            :: Player.Y #1 + wrapcoordinate 'Player.Y STO ;
+            :: Player.Y #1 - wrapcoordinate 'Player.Y STO ; }
+          (Move to another room.)
+          evalrandom Actions.move ; }
+      + +
+      (Roll to choose between our various fates.)
+      evalrandom ;
+
+  :move:
+    ::
+      (Move to a new room.)
+      Player.X Player.Y Player.Z #3 DUPN
+      Carto.markvisible Carto.getroom
+      'Here STO
+      "Here you find " Here.desc + "." + DISP
+      newline
+      Here.onarrival ;
+
+  :quit:
+    ::
+      (Prompt again to see if the user wants to quit.)
+      "Are you sure you want to quit? " PROMPT
+      "y" ==
+      'Endgame.quit
+      ':: "Then don't say that you do!" complain ;
+      IFTE ;
+]
+'Actions STO
+
+(Archetypes for the various room, item, and enemy types in the game.)
+MKDIR 'Archetypes STO
+[dir:
+  :Entrance:
+    [dir:
+      :desc: "the entrance"
+      :icon: "E"
+      :onarrival: (do nothing)
+      :actions:
+        { { :: "n" == ; Endgame.leave } }
+      :visible: True ]
+  :Empty:
+    [dir:
+      :desc: "an empty room"
+      :icon: "."
+      :onarrival: (do nothing)
+      :actions: {}
+      :visible: False ]
+  :Item:
+    [dir:
+      :onarrival:
+        :: Here.get Carto.emptyhere ;
+      :actions: {}
+      :visible: False ]
+  :Enemy:
+    [dir:
+      :icon: "M"
+      :onarrival: fite!
+      :actions: {}
+      :visible: False ]
+  :Upstairs:
+    [dir:
+      :desc: "stairs going up"
+      :icon: "U"
+      :onarrival: (do nothing)
+      :actions:
+        { { :: "u" == ; Actions.up } }
+      :visible: False ]
+  :Downstairs:
+    [dir:
+      :desc: "stairs going down"
+      :icon: "D"
+      :onarrival: (do nothing)
+      :actions:
+        { { :: "d" == ; Actions.down } }
+      :visible: False ]
+  :Sinkhole:
+    [dir:
+      :desc: "a sinkhole"
+      :icon: "S"
+      :onarrival: Actions.down
+      :actions: {}
+      :visible: False ]
+  :Warp:
+    [dir:
+      :desc: "a warp"
+      :icon: "W"
+      :onarrival:
+        :: randomplace 'Player.X STO 'Player.Y STO 'Player.Z STO Actions.move ;
+      :actions: {}
+      :visible: False ] 
+  :Book:
+    [dir:
+      :desc: "a book"
+      :icon: "B"
+      :onarrival: (do nothing)
+      :actions:
+        { { :: "o" == ; Actions.openbook } }
+      :visible: False ] 
+  :Chest:
+    [dir:
+      :desc: "a chest"
+      :icon: "C"
+      :onarrival: (do nothing)
+      :actions:
+        { { :: "o" == ; Actions.openchest } }
+      :visible: False ]
+  :Pool:
+    [dir:
+      :desc: "a pool"
+      :icon: "P"
+      :onarrival: (do nothing)
+      :actions:
+        { { :: "dr" == ; Actions.drink } }
+      :visible: False ] 
+  :Orb:
+    [dir:
+      :desc: "an orb"
+      :icon: "O"
+      :onarrival: (do nothing)
+      :actions:
+        { { :: "g" == ; Actions.gaze } }
+      :visible: False ]
+  :Vendor:
+    [dir:
+      :desc: "a vendor"
+      :icon: "V"
+      :onarrival:
+        :: Player.aggrovendor
+          'fite!
+          ':: "You may (tr)ade with, (a)ttack, or ignore the vendor." 
+            DISP ;
+          IFTE ;
+      :actions:
+        { { :: "a" == ; 
+            :: "You'll be sorry you did that!" complain newline
+              True 'Player.aggrovendor STO fite! ; }
+          { :: "tr" == ; Actions.trade } }
+      :visible: False ]
+  :Zotorb:
+    [dir:
+      :desc: "a warp"
+      :icon: "W"
+      :onarrival:
+        :: (The Orb of Zot must be teleported onto.)
+          Player.lastcommand "t" ==
+          ':: "Great Zot!" DISP Carto.emptyhere ;
+          ':: Player.lastcommand Rules.Actions KCASE ;
+          IFTE ;
+      :actions: {}
+      :visible: False ]
+  ]'Archetypes.Room STO
+
+(Some stats about different character classes.)
+[dir:
+  :Hobbit:
+    [dir:
+      :article: "a "
+      :name: "hobbit"
+      :strength: #4
+      :intelligence: #8
+      :dexterity: #12
+      :extras: #4 ]
+  :Elf:
+    [dir:
+      :article: "an "
+      :name: "elf"
+      :strength: #6
+      :intelligence: #8
+      :dexterity: #10
+      :extras: #8 ]
+  :Human:
+    [dir:
+      :article: "a "
+      :name: "human"
+      :strength: #8
+      :intelligence: #8
+      :dexterity: #8
+      :extras: #8 ]
+  :Dwarf:
+    [dir:
+      :article: "a "
+      :name: "dwarf"
+      :strength: #10
+      :intelligence: #8
+      :dexterity: #6
+      :extras: #8 ] ]
+'Archetypes.Species STO
+
+(This evaluates immediately to populate a Specieslist for various purposes.)
+:: {}
+  Archetypes.Species DIR
+  ':: 'Archetypes.Species SWAP + + ;
+  FOREACH DROP ;
+'Archetypes.Specieslist STO
+ 
+(And abbreviations for those classes, as well as armor and weapons.)
+[dir:
+  :Species:
+    [dir:
+      :e: Archetypes.Species.Elf
+      :m: Archetypes.Species.Human
+      :d: Archetypes.Species.Dwarf
+      :h: Archetypes.Species.Hobbit ]
+  :Armor:
+    [dir:
+      :n: Archetypes.Armor.None
+      :l: Archetypes.Armor.Leather
+      :c: Archetypes.Armor.Chainmail
+      :p: Archetypes.Armor.Plate ]
+  :Weapons:
+    [dir:
+      :n: Archetypes.Weapon.None
+      :d: Archetypes.Weapon.Dagger
+      :m: Archetypes.Weapon.Mace
+      :s: Archetypes.Weapon.Sword ] ]
+'Abbreviations STO
+
+(All our enemies.)
+{ [dir:
+    :article: "a "
+    :name: "kobold"
+    :attack: #1
+    :strength: #3
+    :weaponbreaks: False ]
+  [dir:
+    :article: "an "
+    :name: "orc"
+    :attack: #1
+    :strength: #4
+    :weaponbreaks: False ]
+  [dir:
+    :article: "a "
+    :name: "wolf"
+    :attack: #2
+    :strength: #5
+    :weaponbreaks: False ]
+  [dir:
+    :article: "a "
+    :name: "goblin"
+    :attack: #2
+    :strength: #6
+    :weaponbreaks: False ]
+  [dir:
+    :article: "an "
+    :name: "ogre"
+    :attack: #3
+    :strength: #7
+    :weaponbreaks: False ]
+  [dir:
+    :article: "a "
+    :name: "troll"
+    :attack: #3
+    :strength: #8
+    :weaponbreaks: False ]
+  [dir:
+    :article: "a "
+    :name: "bear"
+    :attack: #4
+    :strength: #9
+    :weaponbreaks: False ]
+  [dir:
+    :article: "a "
+    :name: "minotaur"
+    :attack: #4
+    :strength: #10
+    :weaponbreaks: False ]
+  [dir:
+    :article: "a "
+    :name: "gargoyle"
+    :attack: #5
+    :strength: #11
+    :weaponbreaks: True ]
+  [dir:
+    :article: "a "
+    :name: "chimera"
+    :attack: #5
+    :strength: #12
+    :weaponbreaks: False ]
+  [dir:
+    :article: "a "
+    :name: "balrog"
+    :attack: #6
+    :strength: #12
+    :weaponbreaks: False ]
+  [dir:
+    :article: "a "
+    :name: "dragon"
+    :attack: #6
+    :strength: #12
+    :weaponbreaks: True ] }
+
+(Here is a special case.  A vendor is sometimes an enemy, so this archetype
+ needs to go in both a Vendor room and in the enemies list.)
+[dir:
+  :article: "a "
+  :name: "vendor"
+  :attack: #7
+  :strength: #14
+  :weaponbreaks: False ]
+(So one copy goes in the room...)
+DUP 'Archetypes.Room.Vendor.enemy STO
+(And the other goes into our Enemies list.)
++ 'Archetypes.Enemies STO
+
+[dir:
+  :Gold:
+    [dir:
+      :desc: "gold pieces"
+      :icon: "G"
+      :get:
+        ::
+          Player.gold #10 rollone + 'Player.gold STO
+          "You now have " Player.gold + "." + DISP ; ]
+  :Flares:
+    [dir:
+      :desc: "flares"
+      :icon: "F"
+      :get:
+        ::
+          Player.flares #5 rollone + 'Player.flares STO
+          "You now have " Player.flares + "." + DISP ; ] ]
+'Archetypes.Item STO
+
+(Treasures and the things they fix.)
+{ [dir:
+    :name: "Ruby Red"
+    :value: #1
+    :curse: 'lethargy ]
+  [dir:
+    :name: "Norn Stone"
+    :value: #2
+    :curse: 'none ]
+  [dir:
+    :name: "Pale Pearl"
+    :value: #3
+    :curse: 'leech ]
+  [dir:
+    :name: "Opal Eye"
+    :value: #4
+    :curse: 'blindness ]
+  [dir:
+    :name: "Green Gem"
+    :value: #5
+    :curse: 'forgetfulness ]
+  [dir:
+    :name: "Blue Flame"
+    :value: #6
+    :curse: 'stuck ]
+  [dir:
+    :name: "Palantir"
+    :value: #7
+    :curse: 'none ]
+  [dir:
+    :name: "Silmaril"
+    :value: #8
+    :curse: 'none ] }
+'Archetypes.Treasure STO
+
+(Names of different curse traps.)
+{ lethargy leech forgetfulness }
+'Archetypes.Trap STO
+
+[dir:
+  :None: 
+    [dir:
+      :name: "no armor"
+      :class: #0
+      :hits: #0
+      :costinside: #0
+      :costoutside: #0 ]
+  :Leather:
+    [dir:
+      :name: "leather"
+      :class: #1
+      :hits: #7
+      :costinside: #1250
+      :costoutside: #10 ]
+  :Chainmail:
+    [dir:
+      :name: "chainmail"
+      :class: #2
+      :hits: #14
+      :costinside: #1500
+      :costoutside: #20 ]
+  :Plate:
+    [dir:
+      :name: "plate"
+      :class: #3
+      :hits: #21
+      :costinside: #2000
+      :costoutside: #30 ] ]
+'Archetypes.Armor STO
+
+{ [dir:
+    :name: "no weapon"
+    :class: #0
+    :costinside: #0
+    :costoutside: #0 ]
+  [dir:
+    :name: "dagger"
+    :class: #1
+    :costinside: #1250
+    :costoutside: #10 ]
+  [dir:
+    :name: "mace"
+    :class: #2
+    :costinside: #1500
+    :costoutside: #20 ]
+  [dir:
+    :name: "sword"
+    :class: #3
+    :costinside: #2000
+    :costoutside: #30 ] }
+'Archetypes.Weapon STO
+
+(Player stats.  By copying this directory into a local variable, most of the
+ game state can be initialized as many times as needed without explicit STOs.)
+[dir:
+  :X: #3
+  :Y: #0
+  :Z: #0
+  :strength: #4
+  :dexterity: #4
+  :intelligence: #4
+  :gold: #60
+  :blind: False
+  :cheating: False
+  :stuck: False
+  :turns: #0
+  :aggrovendor: False
+  :armor: ()
+  :weapon: ()
+  :species: ""
+  :sex: #0
+  :runestaff: False
+  :orbzot: False
+  :treasures: {}
+  :curses: [dir: ]
+  :flares: #0
+  :lamp: True
+  :playing: True ]
+'Archetypes.Player STO
+
+game
