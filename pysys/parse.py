@@ -11,8 +11,6 @@
 # registered object types to turn text into code.  It also contains the
 # common methods whiteskip, nextobj, and the callback method validnext.
 
-from trivia import *
-
 class parsetoken:
   whitespace = ' \t\r\n'
   delimiters = ['}', '{', ':', ';', '[', ']']
@@ -26,7 +24,8 @@ class parsetoken:
     self.stop = False   	# Flag: stop parsing, either error or done
     self.alternate = False	# Flag: alternate mode (preprocess)
     self.data = None    	# Current object
-    self.error = ''		# Error message text on invalid stop
+                                # Error message text on invalid stop
+    self.error = 'There is nothing here'
     self.whiteskip()		# Advance past any starting whitespace.
 
   # Skip all the whitespace under the cursor.

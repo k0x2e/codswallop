@@ -41,7 +41,8 @@ ISDED?
       ':: (Fetch a list entry and try to load it if it's a string.)
         modules idx `I*.get `I*.dup `I*.type Types.String `I*.==
         ':: 
-          BASDIR `I*.swap `I*.+str ".rpl" `I*.+str `I*.dsk> ISDED?
+          BASDIR `I*.swap `I*.+str ".rpl" `I*.+str 
+          `I*.dup `I*.disp `I*.dsk> ISDED?
           ':: "Module " modules idx `I*.get `I*.+str " is unhappy" 
             `I*.+str `I*.disp "" `I*.disp #0 'ISDED? `I*.sto ;
           `I*.ift ;

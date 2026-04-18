@@ -2,17 +2,17 @@
   #####################################################
   Typewriter module )
 
-(This module provides basic ANSI terminal control characters, and
- type highlighting and stack printing goodness.)
+(This module backs out of all the fancy ASCII stuff to make output suitable
+ for a typewriter.)
 
-(Set underline for white, red, and bright, and clear for everything else.)
+((Set underline for white, red, and bright, and clear for everything else.)
 ANSI.codes.esc "R" + 
 DUP 'ANSI.codes.normal STO
     'ANSI.codes.nofore STO
 ANSI.codes.esc "E" + 
 DUP 'ANSI.codes.bright STO
 DUP 'ANSI.codes.red STO 
-    'ANSI.codes.white STO
+    'ANSI.codes.white STO)
 
 (No colorization at all on a typewriter.)
 { "" } Types.n LEN *

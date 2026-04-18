@@ -1,0 +1,255 @@
+( Generate a ROM representation of an object tree.  This is very quick and
+  dirty.
+
+  To find one object:
+  - Check if ramid exists in store
+  - If it exists, return its contents (integer)
+  - If it doesn't exist, run type-specific generator which returns integer
+
+  To generate an atomic object:
+  - Record object count to I*.ramid symbol and increment
+  - Append string representation to output
+
+  To generate a composite object:
+  - Run find against each object inside
+  - Append string representation to output
+
+  Atomic generators for integers and symbols should generate a cache
+  to reduce object count 
+
+  Generated format: bracketed, comma and colon separated list of type
+  numbers and names used in the file:
+  Title string
+  [3:Symbol,5:String,etc]
+  'CROMn ', where n is the number of objects following
+  'n: obj ', where n is the type number and obj is some encoding:
+  For strings, comments, symbols, internals: length, space, text
+  For lists and code: length, space, object number, ...
+  For tags: name length, space, name, space, object number (or just -1 if
+  nulltag)
+  For quotes: object number
+  For directories: tag, next (or just tag=self object number for lastobj)
+  For contexts: code, names, depth, ip, next (next can be self)
+  For builtins: name, hint, argct, then:
+      dispatches: list, but type is stored as -(builtin object number)
+  File ends with '.'
+)
+
+(Reveal I* if it isn't already.)
+'I* RCL TYPE Types.Quote == ':: I* 'I* STO ; IFT
+
+[dir: ] 'mkrom STO
+
+(###### Cache ######)
+(Most cache calls will be misses.)
+{ #0 } Types.n LEN *
+
+(Integers, cached by value)
+':: 
+  DUP "cache.int." SWAP + >SYM DUP EXISTS
+  ':: RCL SWAP DROP #1 ;
+  ':: DROP #0 ;
+  IFTE ;
+Types.Integer PUT
+
+(Symbols, checked blindly here but only cached if they're length 1.)
+'::
+  DUP >STR "" == ':: DROP '__NIL__ ; IFT
+  DUP 'cache.sym SWAP + DUP EXISTS
+  ':: RCL SWAP DROP #1 ;
+  ':: DROP #0 ;
+  IFTE ;
+Types.Symbol PUT
+'mkrom.cached STO
+
+(###### Generators ######)
+(We only really care about a few types.)
+{ :: "Unsupported object type" DED ; } Types.n LEN * 
+
+(Integer)
+':: >STR DUP "cache.int." SWAP + >SYM count SWAP STO ;
+Types.Integer PUT
+
+(Float)
+'>STR
+Types.Float PUT
+
+(Symbol)
+'::
+  DUP DUP LEN #1 ==
+  '::
+    'cache.sym SWAP + count SWAP STO ;
+  'DROP IFTE
+  >STR DUP "__NIL__" ==
+  ':: DROP "0 " ;
+  ':: DUP LEN " " + SWAP + ;
+  IFTE ;
+Types.Symbol PUT
+
+(String, comment)
+':: >STR DUP LEN " " + SWAP + ;
+DUP ROTD Types.String PUT
+SWAP Types.Comment PUT
+
+(Quote)
+':: EVAL findone >STR ;
+Types.Quote PUT 
+
+(Tag, with special nulltag handling.)
+':: 
+  DUP I*.nulltag SAME
+  ':: DROP #-1 ;
+  ':: OBJ> findone " " + SWAP findone + ;
+  IFTE ;
+Types.Tag PUT
+
+(Directory, with special lastobj handling.)
+':: DUP I*.lastobj SAME
+  ':: DROP count ; 
+  ':: I*.dir> findone " " + SWAP findone + ;
+  IFTE ;
+Types.Directory PUT
+
+(Internal)
+':: UNPARSE >STR DUP LEN " " + SWAP + ;
+Types.Internal PUT
+
+(List)
+'::
+  DUP LEN >STR SWAP
+  '::
+    " " SWAP findone + + ;
+  FOREACH DROP ;
+DUP ROTD Types.List PUT
+SWAP Types.Code PUT
+
+(Builtin)
+'::
+  OBJ> findone " " + SWAP (name)
+  findone " " + + SWAP (hint)
+  findone + SWAP DROP (argct) ;
+Types.Builtin PUT
+
+(Context)
+'::
+  I*.context> 
+  #4 PICK findone " " +   (Code)
+  #3 PICK findone " " + + (Names)
+  #6 ROLL findone " " + + (Depth)
+  #4 PICK findone " " + + (ip)
+  SWAP DUP obj SAME
+  ':: DROP count ;
+  'findone IFTE +         (Next)
+  #4 ROLLD #3 DROPN ;
+Types.Context PUT
+
+'mkrom.generators STO
+
+(###### Post-generators ######)
+{ :: DROP "" ; } Types.n LEN * 
+
+(Dispatch table has to be stored after a builtin, since they can
+ self-reference.)
+':: DUP I*.ramid RCL NEG ":" + " " SWAP + SWAP OBJ> #3 DROPN findone + 
+  count #1 + 'count STO ;
+Types.Builtin PUT
+
+'mkrom.postgens STO
+
+(###### Actual code ######)
+(Find one.)
+'::
+  DUP I*.ramid EXISTS
+  ':: I*.ramid RCL ; 
+  ':: DUP TYPE cached SWAP GETE NOT 'generate IFT ;
+  IFTE ;
+'mkrom.findone STO
+
+(Generate one and return object number.)
+'::
+  DUP QUOTE SWAP TYPE
+  '::
+    " " type + ":" +
+    obj generators type GETE + 
+    output SWAP + 'output STO
+    count DUP DUP obj I*.ramid STO
+    (Cache objects to prevent ID reuse by Python)
+    allobj obj #1 >LST + 'allobj STO 
+    #1 + 'count STO 
+    Types.n type GET 'cache.type type >STR >SYM + STO 
+    obj postgens type GETE output SWAP + 'output STO ;
+  { type obj } LOCAL ;
+'mkrom.generate STO
+
+(Type legend for the types actually included in the dump.)
+'::
+  "" "["
+  cache.type DIR DUP LEN
+  '::
+    '::
+      + typenames idx GET + ":" +
+      'cache.type typenames idx GET + RCL +
+      idx #1 + DUP 'idx STO
+      max < DUP "," "]" IFTE SWAP ;
+    REP + ;
+  { max typenames :idx: #0 } LOCAL ;
+'mkrom.legend STO
+
+(Environment)
+'::
+  MKDIR MKDIR
+  ':: 
+    MKDIR 'cache.int STO
+    MKDIR 'cache.sym STO
+    MKDIR 'cache.type STO
+    findone DROP legend "CROM" count + + output + " ." + 
+    cache ANSI.tocolor ; 
+  { 
+    :findone: mkrom.findone
+    :generate: mkrom.generate
+    :generators: mkrom.generators
+    :postgens: mkrom.postgens
+    :cached: mkrom.cached
+    :legend: mkrom.legend
+    :output: ""
+    :count: #0 
+    :allobj: {}
+    cache ram }
+  LOCAL ;
+'mkrom.serialize STO
+
+(Hang onto lastdir and nullrem.)
+[dir: ] I*.dir> 'I*.lastobj STO 'I*.nulltag STO
+
+
+'::
+  ':: 'argv STO ;
+  #0
+  I*.firstobj
+  I*.getcontext I*.nextcontext I*.nextcontext
+  I*.>context mkrom.serialize
+  "Codswallop RPL (rom generation " EPOCH >INT + ")" + SWAP +
+  "personality/default.rom" "write" FOPEN WRITE ;
+'mkrom.stop-danger STO
+
+(Make a new personality.)
+{ {
+		::
+      SWAP
+      #0
+      I*.firstobj
+      I*.getcontext I*.nextcontext I*.nextcontext
+      I*.>context mkrom.serialize
+      "Codswallop RPL (" #3 PICK + " personality, " + 
+      EPOCH >INT + ")" + SWAP +
+      SWAP ".rom" + "personality/" SWAP + "write" FOPEN WRITE ;
+  	Types.Code
+    Types.String
+} }
+#2
+"Create a new personality from a name and code."
+'NEW
+>BIN
+'mkrom.NEW STO
+
+mkrom STATICN 'mkrom STO

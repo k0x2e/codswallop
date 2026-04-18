@@ -6,8 +6,8 @@
 # This module includes popular features such as the ability
 # to execute RPL code and manipulate the named store.
 
-from trivia import *
-from rtypes import typedir, typelst, typerem, typeint, typestr, typetag, typecontext, typebinproc, typesym, typecode
+from .trivia import *
+from .rtypes import typedir, typelst, typerem, typeint, typestr, typetag, typecontext, typebinproc, typesym, typecode
 
 # Drop out of a call unconditionally: 'ret'.
 def ret(x):
@@ -47,7 +47,7 @@ class rplruntime:
     self.dieanyway = False
             
     # Democratize the power to drop a context. 
-    self.Return = typebinproc(ret)
+    self.Return = typebinproc('semicolon', ret)
 
     # An empty tag used as filler in directories.
     self.nulltag=typetag('', typerem('NIL'))

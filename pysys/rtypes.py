@@ -14,8 +14,8 @@
 # with the rpltypes.updatestore method called afterward to keep the
 # in-interpreter Types directory up to date.
 
-from trivia import *
-import parse
+from .trivia import *
+from .parse import getnumber, getstring, validatename, parsecomposite
 
 import copy
 
@@ -112,8 +112,8 @@ class objarchetype:
 # Binary call, the barest wrapper around a Python function.
 class typebinproc(objarchetype):
   typename = 'Internal'
-  data = '(internal)'
-  def __init__(self, procedure):
+  def __init__(self, id, procedure):
+    self.data = id
     self.eval = procedure
 
 # Call context, the basis for the call stack.
@@ -172,7 +172,7 @@ class typeint(objarchetype):
         cursor += 1
         
       # Now rummage for numbers.
-      text, cursor = parse.getnumber(token.text, cursor)
+      text, cursor = getnumber(token.text, cursor)
             
       # Now try to make whatever we got be a number.  Parsenumber must have
       # returned something, and that something must have been followed by
@@ -213,13 +213,13 @@ class typefloat(objarchetype):
     # error-free otherwise.
     if cursor < len(token.text) and token.text[cursor] in '.0123456789':
       # This will be our integer portion, if there is one.
-      value, cursor = parse.getnumber(token.text, cursor)
+      value, cursor = getnumber(token.text, cursor)
       text += value
                   
       # If we have a decimal point, add it and whatever integer may follow.
       if cursor < len(token.text) and token.text[cursor] == '.':
         cursor += 1
-        value, cursor = parse.getnumber(token.text, cursor)
+        value, cursor = getnumber(token.text, cursor)
         text += '.' + value
 
       # If there's an exponent, add it and whatever integer may follow also.
@@ -232,7 +232,7 @@ class typefloat(objarchetype):
           text += '-'
           cursor += 1      
 
-        value, cursor = parse.getnumber(token.text, cursor)
+        value, cursor = getnumber(token.text, cursor)
         # If there's an e but no exponent, fail.
         if len(value):
           text += value
@@ -263,7 +263,7 @@ class typestr(objarchetype):
     cursor = token.cursor
     if token.text[cursor] == '"':
       cursor += 1
-      ourtext, cursor = parse.getstring(token.text, cursor, '"')
+      ourtext, cursor = getstring(token.text, cursor, '"')
       if cursor < len(token.text) and token.text[cursor] == '"':
         token.validnext(typestr(ourtext), cursor+1)
       else:
@@ -312,8 +312,8 @@ class typesym(objarchetype):
   
   def parse(token):    
     cursor = token.cursor
-    ourtext, cursor = parse.getstring(token.text, cursor, token.whitespace)
-    ourtext = parse.validatename(ourtext)
+    ourtext, cursor = getstring(token.text, cursor, token.whitespace)
+    ourtext = validatename(ourtext)
     if ourtext is None:
       # Reject names with delimiters or names with null segments.
       token.invalidate("Are you trying to break shit with delimiters in symbol names?")
@@ -334,7 +334,7 @@ class typesym(objarchetype):
     if x is None:
       # Couldn't find symbol.
       runtime.Caller = runtime.rtcaller
-      oursym = symtostr(self.data)        
+      oursym = symtostr(self.data)
       return runtime.ded('We seek '+oursym+' but we cannot always find '+oursym)
     elif runtime.Break:
       # Most but not all circular references are caught at store time, so
@@ -514,7 +514,7 @@ class typetag(objarchetype):
     if token.text[cursor] == ":":
       # Increment our cursor and see what we got for a name.
       cursor += 1
-      ourtext, nextcursor = parse.getstring(token.text, cursor, ":")
+      ourtext, nextcursor = getstring(token.text, cursor, ":")
       
       # If the cursor did not advance, that means we found ::.
       if nextcursor != cursor:
@@ -523,7 +523,7 @@ class typetag(objarchetype):
         cursor = nextcursor
         if cursor < len(token.text) and token.text[cursor] == ":":
           # And it's also possible they didn't give us a valid name.
-          if parse.validatename(ourtext) and not '.' in ourtext:
+          if validatename(ourtext) and not '.' in ourtext:
             # But if they did, now increment and try to retrieve a valid object.
             token.cursor = cursor+1
             token.whiteskip()
@@ -555,7 +555,7 @@ class typelst(objarchetype):
       token.invalidate('Wherever this was supposed to go, it wasn\'t here')
     elif token.text[token.cursor] == '{':
       ourlist = typelst([])
-      parse.parsecomposite(token, ourlist, 1, '}')
+      parsecomposite(token, ourlist, 1, '}')
       # If parsecomposite wasn't stopped, there was no error or EOF.
       if not token.stop:
         token.validnext(ourlist, token.cursor+1)
@@ -595,7 +595,7 @@ class typecode(typelst):
       token.invalidate('Perhaps this semicolon should be somewhere else')
     elif token.text[token.cursor:token.cursor+2] == '::':
       ourcode = typecode([])
-      parse.parsecomposite(token, ourcode, 2, ";")
+      parsecomposite(token, ourcode, 2, ";")
       # If parsecomposite wasn't stopped, there was no error or EOF.
       if not token.stop:
         # Code lists end with a mandatory internal which drops the current
