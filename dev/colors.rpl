@@ -467,7 +467,7 @@ STATICN '? STO
   ;
   { max :idx:#0 } LOCAL ;
 'LEGEND STO
-
+(
 (Document things... in color.)
 { {
 :: OBJ>
@@ -515,5 +515,5 @@ Types.Builtin }
 { DOC } STATIC
 #1
 "Document the various possibilities of a builtin function."
-'DOC >BIN 'DOC STO
+'DOC >BIN 'DOC STO)
 

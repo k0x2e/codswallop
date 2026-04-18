@@ -548,7 +548,7 @@ I*.stobin
         Types.List }
       { :: I*.len ":: … ;" ":: ;" I*.ifte ;
         Types.Code }
-      { :: I*.bin> #4 I*.rolld #3 I*.dropn ;
+      { :: I*.bin> #4 I*.rolld #3 I*.dropn I*.sym>str ;
         Types.Builtin }
       { :: I*.tag> ": " I*.+str ":" I*.swap I*.+str
            I*.swap I*.lastcall I*.+str ;
@@ -635,45 +635,49 @@ I*.stobin
 (Less than)
 { :name: <
   :args: #2
-  :hint: "Compare two numbers."
+  :hint: "Compare two numbers, or two strings."
   :table:
   { { I*.< Types.Integer Types.Integer }
     { I*.< Types.Float   Types.Float }
     { I*.< Types.Integer Types.Float }
-    { I*.< Types.Float   Types.Integer } } }
+    { I*.< Types.Float   Types.Integer }
+    { I*.< Types.String  Types.String } } }
 I*.stobin
 
 (Less than or equal to)
 { :name: <=
   :args: #2
-  :hint: "Compare two numbers."
+  :hint: "Compare two numbers, or two strings."
   :table:
   { { I*.<= Types.Integer Types.Integer }
     { I*.<= Types.Float   Types.Float }
     { I*.<= Types.Integer Types.Float }
-    { I*.<= Types.Float   Types.Integer } } }
+    { I*.<= Types.Float   Types.Integer } 
+    { I*.<= Types.String  Types.String } } }
 I*.stobin
 
 (Greater than)
 { :name: >
   :args: #2
-  :hint: "Compare two numbers."
+  :hint: "Compare two numbers, or two strings."
   :table:
   { { I*.> Types.Integer Types.Integer }
     { I*.> Types.Float   Types.Float }
     { I*.> Types.Integer Types.Float }
-    { I*.> Types.Float   Types.Integer } } }
+    { I*.> Types.Float   Types.Integer } 
+    { I*.> Types.String  Types.String }} }
 I*.stobin
 
 (Greater than or equal to)
 { :name: >=
   :args: #2
-  :hint: "Compare two numbers."
+  :hint: "Compare two numbers, or two strings."
   :table:
   { { I*.>= Types.Integer Types.Integer }
     { I*.>= Types.Float   Types.Float }
     { I*.>= Types.Integer Types.Float }
-    { I*.>= Types.Float   Types.Integer } } }
+    { I*.>= Types.Float   Types.Integer } 
+    { I*.>= Types.String  Types.String } } }
 I*.stobin
 
 (AND)
@@ -804,9 +808,19 @@ I*.stobin
   :args: #1
   :hint: "Combine x objects into a list, or convert code to a list."
   :table:
-  { { I*.>lst          Types.Integer }
-    { I*.composite>lst Types.Code }
-    { (Nothin')        Types.List } } }
+  { { I*.>lst     Types.Integer }
+    { I*.code>lst Types.Code }
+    { (Nothin')   Types.List } } }
+I*.stobin
+
+(Make code)
+{ :name: >CODE
+  :args: #1
+  :hint: "Combine x objects into code, or convert a list to code."
+  :table:
+  { { I*.>code    Types.Integer }
+    { I*.lst>code Types.List }
+    { (Nothin')   Types.Code } } }
 I*.stobin
 
 

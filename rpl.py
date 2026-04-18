@@ -4,13 +4,11 @@
 # #####################################################
 # Main
 
-# Once a proud ball of deeply interrelated code, rpl.py is
-# now merely a stub that launches a copy of the interpreter.
-
-# It's still mine. -kia
-
-from trivia import *
-import parse, runtime, rtypes, internals
+from pysys.trivia import *
+from pysys.rtypes import baseregistry, typestr
+from pysys.runtime import rplruntime
+from pysys.internals import stoprocs
+from pysys.rom import romboot
     
 import signal, sys
 
@@ -26,28 +24,35 @@ def catchsigint(signal, frame):
 
 # Create a new runtime containing just our base types (extra types
 # can be added whenever, but the runtime will roll with just these.)
-ourtypes = rtypes.baseregistry()
-ourRT = runtime.rplruntime(ourtypes)
+ourtypes = baseregistry()
+ourRT = rplruntime(ourtypes)
 
 # Store our internals where the language can get them.
 ourRT.sto([INTERNALSDIR], ourRT.firstdir(ourRT.lastobj))
-internals.stoprocs(ourRT, INTERNALSDIR)
-
-# And store our version string and base directory.
-ourRT.sto(['VERSION'], rtypes.typestr(VERSION))
-ourRT.sto(['BASDIR'], rtypes.typestr(BASDIR))
+stoprocs(ourRT, INTERNALSDIR)
+ourRT.sto([INTERNALSDIR, 'semicolon'], ourRT.Return)
+ourRT.sto([INTERNALSDIR, 'lastobj'], ourRT.lastobj)
+ourRT.sto([INTERNALSDIR, 'nulltag'], ourRT.nulltag)
 
 # Drop our commandline argument on the stack as a string, if there is one.
-if len(sys.argv)==2:
-  ourRT.Stack.push(rtypes.typestr(sys.argv[1]))
+# -p is the only system level option, to load different personalities.
+argv = sys.argv
+if len(argv)>2 and argv[1]=='-p':
+  personality = argv[2]
+  argv = argv[3:]
 else:
-  ourRT.Stack.push(rtypes.typestr(""))
+  personality = PERSONALITY
 
-# Load and parse the RPL-side bootstrap.
-bootstrap = parse.parse(ourRT, LAUNCHCODE).eval
+if len(argv)>1:
+  ourRT.Stack.push(typestr(argv[1]))
+else:
+  ourRT.Stack.push(typestr(""))
+
+# Load a personality ROM.
+romboot(ourRT, f'personality/{personality}.rom')
 
 # Turn on Ctrl-C signal handling.
 signal.signal(signal.SIGINT, catchsigint)
 
 # And start running.
-ourRT.rs(bootstrap)
+ourRT.rs(ourRT.Context.eval)

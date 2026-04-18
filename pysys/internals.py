@@ -12,9 +12,14 @@
 # their user-level safety of argument checking and so forth, is done at boot
 # with builtins.rpl.
 
-from trivia import *
-from runtime import ret
-import rtypes, parse
+from .trivia import *
+from .runtime import ret
+from .rtypes import typeint, typefloat, typebin, typestr, typelst
+from .rtypes import typecode, typequote, typebinproc, typecontext, typedir
+from .rtypes import typetag, typesym, typeio, symtostr, typerem
+from .rom import evalrom
+from .parse import parse, validatename
+#import pysys.rtypes, pysys.parse, pysys.rom
 
 import time, random, copy
 
@@ -42,20 +47,32 @@ def makebinprocs():
   
   # List of names in a directory.
   def x(rt):
-    n = rtypes.typelst()
+    n = typelst()
     nam = rt.Stack.pop().next
     while nam is not rt.lastobj:
       # Skip firstdirs.
       if len(nam.tag.name):
-        n.push(rtypes.typesym([nam.tag.name]))
+        n.push(typesym([nam.tag.name]))
       nam = nam.next
     rt.Stack.push(n)
     return rt.Context.eval
   bins += [['dir', x]]
+
+  # String name of internal call.
+  def x(rt):
+    rt.Stack.push(typesym([rt.Stack.pop().data]))
+    return rt.Context.eval
+  bins += [['romid', x]]
     
+  # Universal identifier of any object.
+  def x(rt):
+    rt.Stack.push(typesym(['ram', str(id(rt.Stack.pop()))]))
+    return rt.Context.eval
+  bins += [['ramid', x]]
+  
   # Object type.
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().typenum))
+    rt.Stack.push(typeint(rt.Stack.pop().typenum))
     return rt.Context.eval
   bins += [['type', x]]
   
@@ -92,9 +109,9 @@ def makebinprocs():
 
   # Return error messages and clear internal state.
   def x(rt):
-    rt.Stack.push(rtypes.typestr(rt.Caller.data))
-    rt.Stack.push(rtypes.typestr(rt.Reason))
-    rt.Stack.push(rtypes.typeint(rt.Interrupt))
+    rt.Stack.push(typestr(rt.Caller.data))
+    rt.Stack.push(typestr(rt.Reason))
+    rt.Stack.push(typeint(rt.Interrupt))
     rt.Caller=rt.nullcaller
     rt.Reason=''
     rt.Interrupt=False
@@ -113,7 +130,7 @@ def makebinprocs():
     options = rt.Stack.pop()
     filename = rt.Stack.pop()
     try:
-      rt.Stack.push(rtypes.typeio(open(filename.data, options.data)))
+      rt.Stack.push(typeio(open(filename.data, options.data)))
     except:
       rt.Stack.push(filename)
       rt.Stack.push(options)
@@ -123,9 +140,9 @@ def makebinprocs():
 
   def x(rt):
     if rt.Stack.pop().eof:
-      rt.Stack.push(rtypes.typeint(1))
+      rt.Stack.push(typeint(1))
     else:
-      rt.Stack.push(rtypes.typeint(0))
+      rt.Stack.push(typeint(0))
     return rt.Context.eval
   bins += [['feof', x]]
   
@@ -147,7 +164,7 @@ def makebinprocs():
       string = handle.data.readline(MAXREAD)
       if not len(string):
         handle.eof = True
-      rt.Stack.push(rtypes.typestr(string.rstrip('\n')))
+      rt.Stack.push(typestr(string.rstrip('\n')))
     except:
       rt.Stack.push(handle)
       return rt.ded('You may read a book, but not this file')
@@ -158,19 +175,18 @@ def makebinprocs():
   def x(rt):
     chars = rt.Stack.pop()
     handle = rt.Stack.pop()
+    request = chars.data
+    if request < 1 or request > MAXREAD:
+      request = MAXREAD      
     try:
-      if chars.data > 0 and chars.data < MAXREAD:
-        string = handle.data.read(chars.data)
-        if len(string)<chars.data:
-          handle.eof = True
-      else:
-        rt.Stack.push(rtypes.typestr(handle.data.read(MAXREAD)))
-        if len(string)<MAXREAD:
-          handle.eof = True
+      string = handle.data.read(request)
     except:
       rt.Stack.push(handle)
       rt.Stack.push(chars)
       return rt.ded('You may read a book, but not this file')
+    if len(string)<request:
+      handle.eof = True
+    rt.Stack.push(typestr(string))
     return rt.Context.eval
   bins += [['fread', x]]
 
@@ -218,7 +234,7 @@ def makebinprocs():
     rt.dieanyway = True
     x = rt.Stack.pop()
     try:
-      rt.Stack.push(rtypes.typestr(input(x.data)))
+      rt.Stack.push(typestr(input(x.data)))
     except:
       rt.Stack.push(x)
       rt.Break = False
@@ -229,7 +245,7 @@ def makebinprocs():
   
   # Time.
   def x(rt):
-    rt.Stack.push(rtypes.typefloat(time.time()))
+    rt.Stack.push(typefloat(time.time()))
     return rt.Context.eval
   bins += [['epoch', x]]
  
@@ -362,7 +378,7 @@ def makebinprocs():
     except:
       rt.Stack.push(name)
       return rt.ded('The operating system says no')
-    obj = parse.parse(rt, text)
+    obj = parse(rt, text)
     if obj is None:
       return rt.ded('The parser did not care for your shenanigans')
     return obj.eval
@@ -376,7 +392,7 @@ def makebinprocs():
     obj = rt.rcl(sym.data)
     if obj == None:
       rt.Stack.push(sym)
-      return rt.ded("What even is "+rtypes.symtostr(sym.data))
+      return rt.ded("What even is "+symtostr(sym.data))
     else:
       rt.Stack.push(obj)
     return rt.Context.eval
@@ -457,9 +473,9 @@ def makebinprocs():
   def x(rt):
     sym = rt.Stack.pop()
     if rt.rcl(sym.data) is None:
-      rt.Stack.push(rtypes.typeint(0))
+      rt.Stack.push(typeint(0))
     else:
-      rt.Stack.push(rtypes.typeint(1))
+      rt.Stack.push(typeint(1))
     return rt.Context.eval
   bins += [['exists', x]]
   
@@ -480,7 +496,7 @@ def makebinprocs():
 
   # Find object memory ID.
   def x(rt):
-    rt.Stack.push(rtypes.typeint(id(rt.Stack.pop())))
+    rt.Stack.push(typeint(id(rt.Stack.pop())))
     return rt.Context.eval
   bins += [['id', x]]
 
@@ -488,7 +504,7 @@ def makebinprocs():
   def x(rt):
     prog = rt.Stack.pop()
     tag = rt.Stack.pop()
-    return rt.newlocall(prog, rtypes.typedir(tag, rt.Context.names))
+    return rt.newlocall(prog, typedir(tag, rt.Context.names))
   bins += [['tlocal', x]]
 
   # Register new type.
@@ -502,7 +518,7 @@ def makebinprocs():
       proto.usreval = usreval.eval
     rt.Types.registerusr(proto)
     rt.Types.updatestore(rt)
-    rt.Stack.push(rtypes.typeint(proto.typenum))
+    rt.Stack.push(typeint(proto.typenum))
     return rt.Context.eval
   bins += [['regtype', x]]
   
@@ -524,7 +540,7 @@ def makebinprocs():
     # hang the inner loop instead of crashing all the way out of Python.
     names = rt.Stack.pop().data
     prog = rt.Stack.pop()
-    rt.Context = rtypes.typecontext(prog, origcontext.names)
+    rt.Context = typecontext(prog, origcontext.names)
     nextob = origcontext.names
     
     dirtype = rt.dirtype
@@ -540,14 +556,14 @@ def makebinprocs():
         # Try popping an object off the stack and assigning it to a name.
         thisob = rt.Stack.pop()
         if thisob is not None:
-          nextob = rtypes.typedir(rtypes.typetag(i.data[0], thisob), nextob)
+          nextob = typedir(typetag(i.data[0], thisob), nextob)
           circname = i.data
         else:
           return usded('You gotta have '+str(len(names))+' things on the stack!')
       elif i.typenum == tagtype:
         # Tags are copied and assigned without pulling anything off the stack.
         circname = [i.name]
-        nextob = rtypes.typedir(i.cp(), nextob)
+        nextob = typedir(i.cp(), nextob)
       elif i.typenum == comtype:
         # Comments are suppressed (this repeats last circulation check.)
         pass
@@ -557,8 +573,8 @@ def makebinprocs():
       rt.Context.names = nextob
       if nextob.tag.obj.typenum == symtype:
         if rt.circsym(circname):
-          return usded('Round and round the '+rtypes.symtostr(circname)+' bush the '+
-                rtypes.symtostr(circname)+' chased the '+rtypes.symtostr(circname))
+          return usded('Round and round the '+symtostr(circname)+' bush the '+
+                symtostr(circname)+' chased the '+symtostr(circname))
       elif nextob.tag.obj.typenum==dirtype:
         if rt.circdir(nextob.tag.obj):
           return usded('This directory circulates if you put it there')
@@ -636,18 +652,18 @@ def makebinprocs():
   ### Mathemagics
   # Parity
   def x(rt):
-    rt.Stack.push(rtypes.typeint(bool(rt.Stack.pop().data % 2)))
+    rt.Stack.push(typeint(bool(rt.Stack.pop().data % 2)))
     return rt.Context.eval
   bins += [['odd', x]]
   
   # Absolute value
   def x(rt):
-    rt.Stack.push(rtypes.typeint(abs(rt.Stack.pop().data)))
+    rt.Stack.push(typeint(abs(rt.Stack.pop().data)))
     return rt.Context.eval
   bins += [['absint', x]]
 
   def x(rt):
-    rt.Stack.push(rtypes.typefloat(abs(rt.Stack.pop().data)))
+    rt.Stack.push(typefloat(abs(rt.Stack.pop().data)))
     return rt.Context.eval
   bins += [['absfloat', x]]
   
@@ -656,7 +672,7 @@ def makebinprocs():
     x = rt.Stack.pop()
     y = rt.Stack.pop()
     if x.data:
-      rt.Stack.push(rtypes.typefloat(y.data % x.data))
+      rt.Stack.push(typefloat(y.data % x.data))
     else:
       rt.Stack.push(y)
       rt.Stack.push(x)
@@ -668,7 +684,7 @@ def makebinprocs():
     x = rt.Stack.pop()
     y = rt.Stack.pop()
     if x.data:
-      rt.Stack.push(rtypes.typeint(y.data % x.data))
+      rt.Stack.push(typeint(y.data % x.data))
     else:
       rt.Stack.push(y)
       rt.Stack.push(x)
@@ -679,19 +695,19 @@ def makebinprocs():
   
   # Add
   def x(rt):
-    rt.Stack.push(rtypes.typefloat(rt.Stack.pop().data+rt.Stack.pop().data))
+    rt.Stack.push(typefloat(rt.Stack.pop().data+rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['+float', x]]
   
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data+rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data+rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['+int', x]]
   
   def x(rt):
     x = rt.Stack.pop().data
     y = rt.Stack.pop().data
-    rt.Stack.push(rtypes.typestr(y+x))
+    rt.Stack.push(typestr(y+x))
     return rt.Context.eval
   bins += [['+str', x]]
   
@@ -713,7 +729,7 @@ def makebinprocs():
   def x(rt):
     x = rt.Stack.pop().data
     y = rt.Stack.pop().data
-    rt.Stack.push(rtypes.typelst(y+x))
+    rt.Stack.push(typelst(y+x))
     return rt.Context.eval
   bins += [['catlist', x]]
 
@@ -721,14 +737,14 @@ def makebinprocs():
     x = rt.Stack.pop().data
     y = rt.Stack.pop().data
     # Suppress the return call from the left hand side of the code.
-    rt.Stack.push(rtypes.typecode(y[:len(y)-1]+x))
+    rt.Stack.push(typecode(y[:len(y)-1]+x))
     return rt.Context.eval
   bins += [['catcode', x]]
 
   def x(rt):
     x = rt.Stack.pop().data
     y = rt.Stack.pop().data
-    rt.Stack.push(rtypes.typesym(y+x))
+    rt.Stack.push(typesym(y+x))
     return rt.Context.eval
   bins += [['+sym', x]]
  
@@ -737,7 +753,7 @@ def makebinprocs():
     x = rt.Stack.pop()
     y = rt.Stack.pop()
     try:
-      rt.Stack.push(rtypes.typefloat(y.data**x.data))
+      rt.Stack.push(typefloat(y.data**x.data))
     except:
       rt.Stack.push(y)
       rt.Stack.push(x)
@@ -749,7 +765,7 @@ def makebinprocs():
     x = rt.Stack.pop()
     y = rt.Stack.pop()
     try:
-      rt.Stack.push(rtypes.typeint(y.data**x.data))
+      rt.Stack.push(typeint(y.data**x.data))
     except:
       rt.Stack.push(y)
       rt.Stack.push(x)
@@ -760,12 +776,12 @@ def makebinprocs():
 
   # Multiply
   def x(rt):
-    rt.Stack.push(rtypes.typefloat(rt.Stack.pop().data*rt.Stack.pop().data))
+    rt.Stack.push(typefloat(rt.Stack.pop().data*rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['*float', x]]
   
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data*rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data*rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['*int', x]]
   
@@ -773,7 +789,7 @@ def makebinprocs():
     x = rt.Stack.pop()
     y = rt.Stack.pop()
     if x.data >= 0:
-      rt.Stack.push(rtypes.typestr(y.data*x.data))
+      rt.Stack.push(typestr(y.data*x.data))
     else:
       rt.Stack.push(y)
       rt.Stack.push(x)
@@ -784,7 +800,7 @@ def makebinprocs():
   def x(rt):
     x = rt.Stack.pop()
     y = rt.Stack.pop()
-    z = rtypes.typelst()
+    z = typelst()
     if x.data >= 0:
       for i in range(x.data):
         for j in y.data: 
@@ -800,7 +816,7 @@ def makebinprocs():
   def x(rt):
     x = rt.Stack.pop()
     y = rt.Stack.pop()
-    z = rtypes.typecode()
+    z = typecode()
     if x.data >= 0:
       y = y.data[:len(y.data)-1]
       for i in range(x.data):
@@ -818,12 +834,12 @@ def makebinprocs():
 
   # Subtract
   def x(rt):
-    rt.Stack.push(rtypes.typefloat(-rt.Stack.pop().data+rt.Stack.pop().data))
+    rt.Stack.push(typefloat(-rt.Stack.pop().data+rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['-float', x]]
   
   def x(rt):
-    rt.Stack.push(rtypes.typeint(-rt.Stack.pop().data+rt.Stack.pop().data))
+    rt.Stack.push(typeint(-rt.Stack.pop().data+rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['-int', x]]
  
@@ -832,7 +848,7 @@ def makebinprocs():
     x = rt.Stack.pop()
     y = rt.Stack.pop()
     if x.data:
-      rt.Stack.push(rtypes.typefloat(y.data/x.data))
+      rt.Stack.push(typefloat(y.data/x.data))
     else:
       rt.Stack.push(y)
       rt.Stack.push(x)
@@ -844,7 +860,7 @@ def makebinprocs():
     x = rt.Stack.pop()
     y = rt.Stack.pop()
     if x.data:
-      rt.Stack.push(rtypes.typeint(y.data/x.data))
+      rt.Stack.push(typeint(y.data/x.data))
     else:
       rt.Stack.push(y)
       rt.Stack.push(x)
@@ -862,13 +878,13 @@ def makebinprocs():
  
   # Random
   def x(rt):
-    rt.Stack.push(rtypes.typefloat(random.random()))
+    rt.Stack.push(typefloat(random.random()))
     return rt.Context.eval
   bins += [['rnd', x]]
   
   # Integer portion
   def x(rt):
-    rt.Stack.push(rtypes.typefloat(int(rt.Stack.pop().data)))
+    rt.Stack.push(typefloat(int(rt.Stack.pop().data)))
     return rt.Context.eval
   bins += [['ip', x]]
 
@@ -876,7 +892,7 @@ def makebinprocs():
   ### Conversions
   # to quote
   def x(rt):
-    rt.Stack.push(rtypes.typequote(rt.Stack.pop()))
+    rt.Stack.push(typequote(rt.Stack.pop()))
     return rt.Context.eval
   bins += [['>quote', x]]
   
@@ -889,13 +905,13 @@ def makebinprocs():
       rt.Stack.push(name)
       return rt.ded("Tags don't have last names")
     else:
-      rt.Stack.push(rtypes.typetag(name.data[0],obj))
+      rt.Stack.push(typetag(name.data[0],obj))
     return rt.Context.eval
   bins += [['>tag', x]]
   
   # to builtin (add dispatch table later with binhook)
   def x(rt):
-    newbin = rtypes.typebin()
+    newbin = typebin()
     oldstack = rt.Stack.data[:]
     # Don't let user get fresh with dotted names
     newbin.data = rt.Stack.pop().data[0]
@@ -913,16 +929,16 @@ def makebinprocs():
   # Break apart a builtin.  Removal is the opposite of installation.
   def x(rt):
     ourbin = rt.Stack.pop()
-    table = rtypes.typelst([])
+    table = typelst([])
     for i in range(len(ourbin.argck)):
       line = [ourbin.dispatches[i]]
       for j in range(ourbin.argct):
-        line += [rtypes.typeint(ourbin.argck[i][j])]
-      table.push(rtypes.typelst(line))
+        line += [typeint(ourbin.argck[i][j])]
+      table.push(typelst(line))
     rt.Stack.push(table)
-    rt.Stack.push(rtypes.typeint(ourbin.argct))
-    rt.Stack.push(rtypes.typestr(ourbin.hint))
-    rt.Stack.push(rtypes.typesym([ourbin.data]))
+    rt.Stack.push(typeint(ourbin.argct))
+    rt.Stack.push(typestr(ourbin.hint))
+    rt.Stack.push(typesym([ourbin.data]))
     return rt.Context.eval
   bins += [['bin>', x]]
 
@@ -1005,14 +1021,19 @@ def makebinprocs():
 
   # Number to integer
   def x(rt):
-    rt.Stack.push(rtypes.typeint(int(rt.Stack.pop().data)))
-    return rt.Context.eval
+    number = rt.Stack.pop()
+    try:
+      rt.Stack.push(typeint(int(number.data)))
+      return rt.Context.eval
+    except (ValueError, OverflowError):
+      rt.Stack.push(number)
+      return rt.ded('This float is too weird to be an integer')
   bins += [['num>int', x]]
   
   def x(rt):
     x = rt.Stack.pop()
     try:
-      rt.Stack.push(rtypes.typeint(int(x.data)))
+      rt.Stack.push(typeint(int(x.data)))
     except:
       rt.Stack.push(x)
       return rt.ded('That will never be an integer, my friend')
@@ -1021,14 +1042,14 @@ def makebinprocs():
   
   # Number to float
   def x(rt):
-    rt.Stack.push(rtypes.typefloat(float(rt.Stack.pop().data)))
+    rt.Stack.push(typefloat(float(rt.Stack.pop().data)))
     return rt.Context.eval
   bins += [['num>float', x]]
   
   def x(rt):
     x = rt.Stack.pop()
     try:
-      rt.Stack.push(rtypes.typefloat(float(x.data)))
+      rt.Stack.push(typefloat(float(x.data)))
     except:
       rt.Stack.push(x)
       return rt.ded("Sir/ma'am, this is a Wendy's")
@@ -1039,9 +1060,9 @@ def makebinprocs():
   def x(rt):
     x = rt.Stack.pop()
     try:
-      rt.Stack.push(rtypes.typefloat(float(x.data)))
+      rt.Stack.push(typefloat(float(x.data)))
     except:
-      rt.Stack.push(rtypes.typefloat(0))
+      rt.Stack.push(typefloat(0))
     return rt.Context.eval
   bins += [['basicval', x]]
 
@@ -1049,7 +1070,7 @@ def makebinprocs():
   def x(rt):
     string = rt.Stack.pop()
     if len(string.data):
-      rt.Stack.push(rtypes.typeint(ord(string.data[0])))
+      rt.Stack.push(typeint(ord(string.data[0])))
     else:
       rt.Stack.push(string)
       return rt.ded('It would be 0 if it was anything at all')
@@ -1060,7 +1081,7 @@ def makebinprocs():
   def x(rt):
     string = rt.Stack.pop()
     if string.data >= 0 and string.data < 1114112:
-      rt.Stack.push(rtypes.typestr(chr(string.data)))
+      rt.Stack.push(typestr(chr(string.data)))
     else:
       rt.Stack.push(string)
       return rt.ded('This number could not possibly be a character')
@@ -1070,7 +1091,7 @@ def makebinprocs():
   # String to objects.
   def x(rt):
     text = rt.Stack.pop()
-    x = parse.parse(rt, text.data)
+    x = parse(rt, text.data)
     if x is None:
       rt.Stack.push(text)
       return rt.ded('This is no RPL that I can see')
@@ -1082,30 +1103,36 @@ def makebinprocs():
   # To symbol.
   def x(rt):
     ourstring = rt.Stack.pop()
-    ourname = parse.validatename(ourstring.data)
+    ourname = validatename(ourstring.data)
     if ourname is None:
       rt.Stack.push(ourstring)
       return rt.ded("This can be a string, but it won't be a symbol")
     else:
-      rt.Stack.push(rtypes.typesym(ourname))
+      rt.Stack.push(typesym(ourname))
     return rt.Context.eval
   bins += [['str>sym', x]]
 
   # String or comment to string.
   def x(rt):
-    rt.Stack.push(rtypes.typestr(rt.Stack.pop().data))
+    rt.Stack.push(typestr(rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['str>str', x]]
   
+  # String or comment to comment.
+  def x(rt):
+    rt.Stack.push(typerem(rt.Stack.pop().data))
+    return rt.Context.eval
+  bins += [['str>rem', x]]
+  
   # Number to string.
   def x(rt):
-    rt.Stack.push(rtypes.typestr(rt.Stack.pop().data))
+    rt.Stack.push(typestr(rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['num>str', x]]
   
   # Symbol to string.
   def x(rt):
-    rt.Stack.push(rtypes.typestr(rtypes.symtostr(rt.Stack.pop().data)))
+    rt.Stack.push(typestr(symtostr(rt.Stack.pop().data)))
     return rt.Context.eval
   bins += [['sym>str', x]]
   
@@ -1113,46 +1140,46 @@ def makebinprocs():
 
   # Equality
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data==rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data==rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['==', x]]
 
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data!=rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data!=rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['!=', x]]
   
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop() is rt.Stack.pop()))
+    rt.Stack.push(typeint(rt.Stack.pop() is rt.Stack.pop()))
     return rt.Context.eval
   bins += [['==ref', x]]
   
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop() is not rt.Stack.pop()))
+    rt.Stack.push(typeint(rt.Stack.pop() is not rt.Stack.pop()))
     return rt.Context.eval
   bins += [['!=ref', x]]
   
   # Less than
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data>rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data>rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['<', x]]
 
   # Greater than
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data<rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data<rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['>', x]]
 
   # Less than or equal to
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data>=rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data>=rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['<=', x]]
 
   # Greater than or equal to
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data<=rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data<=rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['>=', x]]
 
@@ -1160,7 +1187,7 @@ def makebinprocs():
   def x(rt):
     x = bool(rt.Stack.pop().data)
     y = bool(rt.Stack.pop().data)
-    rt.Stack.push(rtypes.typeint(x and y))
+    rt.Stack.push(typeint(x and y))
     return rt.Context.eval
   bins += [['and', x]]
   
@@ -1168,14 +1195,14 @@ def makebinprocs():
   def x(rt):
     x = bool(rt.Stack.pop().data)
     y = bool(rt.Stack.pop().data)
-    rt.Stack.push(rtypes.typeint(x or y))
+    rt.Stack.push(typeint(x or y))
     return rt.Context.eval
   bins += [['or', x]]
   
   # Logical NOT
   def x(rt):
     x = bool(rt.Stack.pop().data)
-    rt.Stack.push(rtypes.typeint(not x))
+    rt.Stack.push(typeint(not x))
     return rt.Context.eval
   bins += [['not', x]]
   
@@ -1183,13 +1210,13 @@ def makebinprocs():
   ### List functions
   # Length of whatever.
   def x(rt):
-    rt.Stack.push(rtypes.typeint(len(rt.Stack.pop().data)))
+    rt.Stack.push(typeint(len(rt.Stack.pop().data)))
     return rt.Context.eval
   bins += [['len', x]]
   
   # Code has its trailing Return call suppressed.
   def x(rt):
-    rt.Stack.push(rtypes.typeint(len(rt.Stack.pop().data)-1))
+    rt.Stack.push(typeint(len(rt.Stack.pop().data)-1))
     return rt.Context.eval
   bins += [['lencode', x]]
   
@@ -1199,7 +1226,7 @@ def makebinprocs():
     if len(list.data):
       newlist = list.data[:]
       thing = newlist.pop()
-      rt.Stack.push(rtypes.typelst(newlist))
+      rt.Stack.push(typelst(newlist))
       rt.Stack.push(thing)
     else:
       rt.Stack.push(list)
@@ -1212,9 +1239,17 @@ def makebinprocs():
     obj = rt.Stack.pop().data
     for i in obj:
       rt.Stack.push(i)
-    rt.Stack.push(rtypes.typeint(len(obj)))
+    rt.Stack.push(typeint(len(obj)))
     return rt.Context.eval
   bins += [['composite>', x]]
+  
+  # Build a directory object.  This should not fall into enemy hands.
+  def x(rt):
+    next = rt.Stack.pop()
+    tag = rt.Stack.pop()
+    rt.Stack.push(typedir(tag, next))
+    return rt.Context.eval
+  bins += [['>dir', x]]
   
   # Un-binned, torn out of obj>.
   def x(rt):
@@ -1228,16 +1263,16 @@ def makebinprocs():
   def x(rt):
     obj = rt.Stack.pop()
     rt.Stack.push(obj.obj)
-    rt.Stack.push(rtypes.typesym([obj.name]))
+    rt.Stack.push(typesym([obj.name]))
     return rt.Context.eval
   bins += [['tag>', x]]
   
   # Return contents of context
   def x(rt):
     obj = rt.Stack.pop()
-    rt.Stack.push(rtypes.typeint(CALLDEPTH-obj.depth))
+    rt.Stack.push(typeint(CALLDEPTH-obj.depth))
     rt.Stack.push(obj.code)
-    rt.Stack.push(rtypes.typeint(obj.ip))
+    rt.Stack.push(typeint(obj.ip))
     rt.Stack.push(obj.names)
     rt.Stack.push(obj.next)
     return rt.Context.eval
@@ -1250,7 +1285,7 @@ def makebinprocs():
     names = rt.Stack.pop()
     ip = rt.Stack.pop()
     code = rt.Stack.pop()
-    newcontext = rtypes.typecontext(code, names, next)
+    newcontext = typecontext(code, names, next)
     newcontext.ip = ip.data
     rt.Stack.push(newcontext)
     return rt.Context.eval
@@ -1262,14 +1297,14 @@ def makebinprocs():
     lst = rt.Stack.pop()
     if j >= 0:
       if lst.typenum == rt.Types.id['String']:
-        rt.Stack.push(rtypes.typestr(lst.data[:j]))
+        rt.Stack.push(typestr(lst.data[:j]))
       else:
         lst = lst.cp()
         lst.data = lst.data[:j]
         rt.Stack.push(lst)
     else:
       rt.Stack.push(lst)
-      rt.Stack.push(rtypes.typeint(j))
+      rt.Stack.push(typeint(j))
       return rt.ded('Ask at least for zero, maybe more')
     return rt.Context.eval
   bins += [['left', x]]
@@ -1282,14 +1317,14 @@ def makebinprocs():
       start = len(lst.data)-j
       start *= (start>=0)
       if lst.typenum == rt.Types.id['String']:
-        rt.Stack.push(rtypes.typestr(lst.data[start:]))
+        rt.Stack.push(typestr(lst.data[start:]))
       else:
         lst = lst.cp()
         lst.data = lst.data[start:]
         rt.Stack.push(lst)
     else:
       rt.Stack.push(lst)
-      rt.Stack.push(rtypes.typeint(j))
+      rt.Stack.push(typeint(j))
       return rt.ded('Ask at least for zero, maybe more')
     return rt.Context.eval
   bins += [['right', x]]
@@ -1301,15 +1336,15 @@ def makebinprocs():
     lst = rt.Stack.pop()
     if i >= 0 and i < len(lst.data):
       if lst.typenum == rt.Types.id['String']:
-        rt.Stack.push(rtypes.typestr(lst.data[i:j+1]))
+        rt.Stack.push(typestr(lst.data[i:j+1]))
       else:
         lst = lst.cp()
         lst.data = lst.data[i:j+1]
         rt.Stack.push(lst)
     else:
       rt.Stack.push(lst)
-      rt.Stack.push(rtypes.typeint(j))
-      rt.Stack.push(rtypes.typeint(i))
+      rt.Stack.push(typeint(j))
+      rt.Stack.push(typeint(i))
       return rt.ded('It would help to have a valid starting subscript')
     return rt.Context.eval
   bins += [['subs', x]]
@@ -1322,7 +1357,7 @@ def makebinprocs():
       return lst.data[i].eval
     else:
       rt.Stack.push(lst)
-      rt.Stack.push(rtypes.typeint(i))
+      rt.Stack.push(typeint(i))
       return rt.ded('This '+lst.typename+' deserves a better subscript')
     return rt.Context.eval
   bins += [['gete', x]]
@@ -1334,12 +1369,12 @@ def makebinprocs():
     lst = rt.Stack.pop()
     if i >= 0 and i < len(lst.data):
       if lst.typenum == rt.Types.id['String']:
-        rt.Stack.push(rtypes.typestr(lst.data[i]))
+        rt.Stack.push(typestr(lst.data[i]))
       else:
         rt.Stack.push(lst.data[i])
     else:
       rt.Stack.push(lst)
-      rt.Stack.push(rtypes.typeint(i))
+      rt.Stack.push(typeint(i))
       return rt.ded('This '+lst.typename+' deserves a better subscript')
     return rt.Context.eval
   bins += [['get', x]]
@@ -1356,28 +1391,55 @@ def makebinprocs():
     else:
       rt.Stack.push(lst)
       rt.Stack.push(obj)
-      rt.Stack.push(rtypes.typeint(i))
+      rt.Stack.push(typeint(i))
       return rt.ded('This '+lst.typename+' deserves a better subscript')
     return rt.Context.eval
   bins += [['put', x]]
+
+  # Make a symbol from a list.
+  def x(rt):
+    items = rt.Stack.pop().data
+    lst = [item.data for item in rt.Stack.data[len(rt.Stack.data)-items:]]
+    rt.Stack.data = rt.Stack.data[:len(rt.Stack)-items]+[typesym(lst)]
+    return rt.Context.eval
+  bins += [['>sym', x]]
+
   
   # Make a list or convert code to list.
   def x(rt):
     items = rt.Stack.pop().data
     if len(rt.Stack)<items:
-      rt.Stack.push(rtypes.typeint(items))
+      rt.Stack.push(typeint(items))
       return rt.ded('If you want '+str(items)+' things in a list, maybe you should have '+str(items)+' things on the stack')
     else:
       lst = rt.Stack.data[len(rt.Stack.data)-items:]
-      rt.Stack.data = rt.Stack.data[:len(rt.Stack)-items]+[rtypes.typelst(lst)]
+      rt.Stack.data = rt.Stack.data[:len(rt.Stack)-items]+[typelst(lst)]
     return rt.Context.eval
   bins += [['>lst', x]]
   
   def x(rt):
-    rt.Stack.push(rtypes.typelst(rt.Stack.pop().data))
+    lst=rt.Stack.pop().data
+    lst=lst[:len(lst)-1]
+    rt.Stack.push(typelst(lst))
     return rt.Context.eval
-  bins += [['composite>lst', x]]
+  bins += [['code>lst', x]]
   
+  # Make code or convert list to code.
+  def x(rt):
+    items = rt.Stack.pop().data
+    if len(rt.Stack)<items:
+      rt.Stack.push(typeint(items))
+      return rt.ded(str(items)+' is more items than you have')
+    else:
+      lst = rt.Stack.data[len(rt.Stack.data)-items:]+[rt.Return]
+      rt.Stack.data = rt.Stack.data[:len(rt.Stack)-items]+[typecode(lst)]
+    return rt.Context.eval
+  bins += [['>code', x]]
+  
+  def x(rt):
+    rt.Stack.push(typecode(rt.Stack.pop().data+[rt.Return]))
+    return rt.Context.eval
+  bins += [['lst>code', x]]
   
   ### Error handling
   # Cause error
@@ -1393,34 +1455,34 @@ def makebinprocs():
   
   # ### Bitwise operations
   def x(rt):
-    rt.Stack.push(rtypes.typeint(~rt.Stack.pop().data))
+    rt.Stack.push(typeint(~rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['bnot', x]]
 
   def x(rt):
     bits = rt.Stack.pop().data
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data << bits))
+    rt.Stack.push(typeint(rt.Stack.pop().data << bits))
     return rt.Context.eval
   bins += [['bshl', x]]
   
   def x(rt):
     bits = rt.Stack.pop().data
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data >> bits))
+    rt.Stack.push(typeint(rt.Stack.pop().data >> bits))
     return rt.Context.eval
   bins += [['bshr', x]]
   
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data & rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data & rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['band', x]]
 
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data | rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data | rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['bor', x]]
   
   def x(rt):
-    rt.Stack.push(rtypes.typeint(rt.Stack.pop().data ^ rt.Stack.pop().data))
+    rt.Stack.push(typeint(rt.Stack.pop().data ^ rt.Stack.pop().data))
     return rt.Context.eval
   bins += [['bxor', x]]
 
@@ -1430,4 +1492,5 @@ def makebinprocs():
 # in an extant runtime.
 def stoprocs(rt, dir):
   for i in makebinprocs():
-    rt.sto([dir]+[i[0]], rtypes.typebinproc(i[1]))
+    rt.sto([dir]+[i[0]], typebinproc(i[0], i[1]))
+  rt.sto([dir]+['evalrom'], typebinproc('evalrom', evalrom))

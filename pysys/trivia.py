@@ -20,7 +20,7 @@ CPDEPTH = 64
 INTERNALSDIR = 'I*'
 
 # Boot program: read and execute 'boot.rpl' out of the base directory.
-LAUNCHCODE = ':: BASDIR "boot.rpl" '+INTERNALSDIR+'.+str '+INTERNALSDIR+'.dsk> ;'
+PERSONALITY = 'default'
 
 # Maximum number of bytes to read from a file into the parser.
 MAXREAD = 256000
