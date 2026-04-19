@@ -3,7 +3,7 @@
   Parser )
 
 (XXX Reloader)
-':: "parse.rpl" DSK> ; 'rl STO
+':: "clodparse.rpl" DSK> ; 'rl STO
 
 (Basic directory tree.)
 [dir:
@@ -11,7 +11,7 @@
   [dir:
     :spaces: { " " "
 " "	" }
-    :reserved: { "}" "{" ":" ";" "[" "]" }
+    :reserved: { "}" "{" ":" ";" "[" "]" "'" "\"" }
     :newline: "
 "
     :maxdigits: #15 
@@ -31,6 +31,7 @@
   Parse.type.Quote 
   Parse.type.Comment
   Parse.type.Directory
+  Parse.type.Symbol
   Parse.type.Else }
 'Parse.default.parsers STO
 
@@ -44,6 +45,22 @@
    {} Parse.default.environment ;
 'parse STO
 
+(Parse and evaluate.)
+':: 
+  '::
+    ':: 
+      skip next valid
+      ':: 
+        DUP nulltoken SAME 'DROP 
+        (':: DUP ANSI.tocolor EVAL ;)
+        'EVAL IFTE ;
+      'parseded
+      IFTE
+      stop NOT ;
+    REP ;
+  {} Parse.default.environment ;
+'peval STO
+
 (Report a parse error.)
 '::
   "Your words fail to become actions." DISP "" DISP
@@ -54,7 +71,7 @@
     '::
       DUP
       ':: DUP text SWAP GET Parse.default.newline ==
-        ':: lines #1 + 'lines STO ; IFT
+        ':: line #1 + 'line STO ; IFT
         #1 - DUP ;
       #0 IFTE ;
     REP DROP
@@ -66,7 +83,7 @@
     REP
     (Then push forward to the next newline or EOF.)
     ':: text right #1 + DUP len <
-      ':: DUP 'right STO GET Parse.default.newline != ;
+      '::  DUP 'right STO GET Parse.default.newline != ;
       ':: DROP DROP #0 ;
       IFTE ;
     REP
@@ -340,9 +357,9 @@
         ':: DROPN "You should find space in your life for a ]" start mkinvalid ;
         '::
           `(Starting with the last directory object, string up all them tags.) 
-          I*.lastobj SWAP ':: I*.>dir ; SWAP * EVAL
+          i**.lastobj SWAP ':: I*.>dir ; SWAP * EVAL
           `(And pop a firstdir on the front.)
-          I*.nulltag SWAP I*.>dir
+          i**.nulltag SWAP I*.>dir
           cursor #1 + mkvalid ;
         IFTE ;
       IFT ;
@@ -368,6 +385,8 @@
 
 (Float)
 '::
+  text cursor GET ASC> DUP #48 >= SWAP #57 <= AND
+  ':: "u got a float over here" start mkinvalid ; IFT
 ;
 'Parse.type.Float STO
 
@@ -478,7 +497,79 @@
   IFT ;
 'Parse.type.Comment STO
 
+(Symbol: one or more dot-separated names.  Returns a list of strings for now.)
+'::
+  `(Make no claim if at EOF, whitespace, or reserved.)
+  '::
+    '::
+      `(Read one name segment, stopping at dot, space, reserved, or EOF.)
+      ""
+      '::
+        cursor len <
+        '::
+          text cursor GET DUP
+          reserved SWAP HAS
+          '::
+            DROP DROP "Breakin shit babes" start mkinvalid #0 ;
+          '::
+            DUP "." == OVER spaces SWAP HAS OR
+            ':: DROP #0 ;
+            ':: + cursor #1 + 'cursor STO #1 ;
+            IFTE ;
+          IFTE ;
+        #0 IFTE ;
+      REP
+      (Don't try to continue if an error is already flagged.)
+      stop
+      #0
+      '::
+        `(An empty segment is not a valid name.)
+        DUP LEN NOT
+        ':: DROP "A symbol name must not be empty" start mkinvalid #0 ;
+        '::
+          length #1 + 'length STO
+          `(Continue only if the next character is a dot; consume it.)
+          cursor len <
+          ':: text cursor GET "." ==
+            ':: cursor #1 + 'cursor STO #1 ;
+            #0 IFTE ;
+          #0 IFTE ;
+        IFTE ;
+      IFTE ;
+    REP
+    stop NOT 
+    '::
+      length I*.>sym altmode
+      ':: DUP EXISTS
+        ':: RCL cursor mkvalid ;
+        ':: DROP "This symbol must exist at parse time" start mkinvalid ;
+        IFTE ;
+      ':: cursor mkvalid ; 
+      IFTE ;
+    IFT ;
+  { :length: #0 } LOCAL ;
+'Parse.type.Symbol STO
+
 (This is where we end up when we're outta chances.)
 '::
   "Whatever this is, it isn't" cursor mkinvalid ;
 'Parse.type.Else STO 
+
+(Temp)
+':: #2 `PICK ; 'OVER STO
+
+
+(Also temp!)
+':: "dev/" 'BASDIR STO "" "dev/boot.rpl" I*.dsk> ;
+'boot STO
+
+'i** EXISTS
+'::
+  (I* 'I* STO
+  i** DIR ':: DUP 'i** SWAP + RCL SWAP 'I* SWAP + STO ; FOREACH DROP)
+  i** CP 'I* STO
+  ':: "read" FOPEN #0 READ 
+    " ;" + ":: " SWAP + parse ; 'pdisk STO 
+  ':: "read" FOPEN #0 READ peval ; 'I*.dsk> STO ;
+IFT
+  Parse STATICN 'Parse STO 

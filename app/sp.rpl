@@ -1,0 +1,157 @@
+(Speaker solver)
+
+(Constants)
+3.14159265359 'pi STO
+#4 'digits STO		(number of significant digits to display)
+
+(Quick and dirty cut to significant digits)
+':: 
+  '::
+    num DUP NOT 'BAIL IFT
+    DUP IP DUP 10 digits ^ < SWAP 10 digits 1 - ^ >= AND
+    'IP
+    '::
+      DUP 10 digits ^ <
+      ':: 1 'direction STO ':: 10 / < ; 'comparison STO ; IFT
+      ':: 10 direction ^ * DUP 10 digits ^ comparison 
+         #1 counter + 'counter STO ;
+      REP 
+      DUP 1 MOD .5 >= ':: 1 + ; IFT
+      IP 10 counter direction NEG * ^ * ;
+    IFTE ;
+  { num :counter: #0 :direction: -1 :comparison: > } LOCAL ;
+'sigdigits STO
+
+(Try to settle down Python's bullshit)
+':: sigdigits >STR digits #1 + LEFT ;
+'rndstr STO
+
+(Ratio where r≥1.)
+':: DUP2 < 'SWAP IFT / ; 'ratio STO
+
+(Concatenate a list into a string and display it.)
+':: "" SWAP ':: EVAL + ; FOREACH DROP DISP ; 
+'displ STO
+
+(Basic dimensions: x, y, z, volume, bracing, thickness)
+[dir: :w: 0 :h: 0 :d: 0 :v: 0 :b: 0 :t: 0 :solved: 0 ] 'dim STO
+
+(Solvers for w, h, d, and v, accounting for bracing)
+[dir:
+  :w: :: dim.v dim.b + dim.h / dim.d / DUP DISP 'dim.w STO #1 'dim.solved STO ;
+  :h: :: dim.v dim.b + dim.w / dim.d / DUP DISP 'dim.h STO #1 'dim.solved STO ;
+  :d: :: dim.v dim.b + dim.w / dim.h / DUP DISP 'dim.d STO #1 'dim.solved STO ;
+  :v: :: dim.w dim.h * dim.d * dim.b - DUP DISP 'dim.v STO #1 'dim.solved STO ; ]
+'s STO
+
+(Quick store functions for w, h, d, t, b, v.)
+':: 'dim.w STO #0 'dim.solved STO ; 'w STO
+':: 'dim.h STO #0 'dim.solved STO ; 'h STO
+':: 'dim.d STO #0 'dim.solved STO ; 'd STO
+':: 'dim.b STO #0 'dim.solved STO ; 'b STO
+':: 'dim.t STO #0 'dim.solved STO ; 't STO
+':: 'dim.v STO #0 'dim.solved STO ; 'v STO
+
+(Ways to construct the volume of internal panels)
+[dir:
+  :shelf: :: dim.w dim.d * dim.t * ;
+  :side: :: dim.h dim.d * dim.t * ;
+  :face: :: dim.w dim.h * dim.t * ;
+  :circle: :: 2 / 2 ^ pi * dim.t * ;
+  :rect: :: * dim.t * ; ]
+'brace STO
+
+(Some presets for the current project)
+[dir:
+  :81-10:
+  ::
+    "88-10 Project (0.035 ft³ for driver volume)" DISP
+    (Base dimensions)
+    [dir: :w: 8.5  :h: 0 :d: 10.5
+          :t: 0.75 :v: :: 1.835 toin³ ;
+          :solved: #0 ] CP 'dim STO
+    ':: brace.shelf dim.w 4 - dim.d 8 - brace.rect - 3 * ; 'dim.b STO
+    s.h size ;
+  :88-41:
+  ::
+    "HUMAN 88-41" DISP     
+    (Base dimensions) 
+    [dir: :w: 8.5  :d: 16 :h: 45.5 
+          :t: 0.75 :v: :: 3.58 toin³ ; 
+          :solved: #0 ] CP 'dim STO
+    (I know there are three shelf braces, probably 1.5 inch perimeter)
+    ':: brace.shelf dim.w 3 - dim.d 3 - brace.rect - 3 * ; 'dim.b STO ; 
+  :sansui:
+  ::
+    "Butler Concert (Sansui) 81-10" DISP     
+    (Base dimensions) 
+    [dir: :w: 7.75  :h: 29.25 :d: 15 
+          :t: 0.75 :v: :: 1.8 toin³ ; 
+          :solved: #0 ] CP 'dim STO
+    ':: 
+      (3 shelf braces with 2 inch perimeter)
+      brace.shelf dim.w 4 - dim.d 4 - brace.rect - 3 * 
+      (Stick frame)
+      dim.h 5 dim.t * - 4 *
+      dim.w 2 dim.t * - 2 * +
+      dim.d 2 dim.t * - 2 * +
+      dim.t DUP * * + ;
+    'dim.b STO
+    s.v ; ]
+'p STO
+
+(Useful final functions)
+':: 
+  dim.solved
+  '::
+    { "Outer dimensions " 
+      :: dim.w dim.t 2 * + rndstr ;
+      " × " 
+      :: dim.h dim.t 2 * + rndstr ;
+      " × " 
+      :: dim.d dim.t 2 * + rndstr ; }
+    displ 
+    { "Inner dimensions " 
+      :: dim.w rndstr ;
+      " × " 
+      :: dim.h rndstr ;
+      " × " 
+      :: dim.d rndstr ; }
+    displ
+    { "Ratio w:h " :: dim.h dim.w ratio rndstr ;
+      ", w:d " :: dim.w dim.d ratio rndstr ;
+      ", h:d " :: dim.h dim.d ratio rndstr ; }
+    displ 
+    "Air volume " dim.v rndstr + " (" dim.v toft³ rndstr + ")" + + DISP
+    "Brace volume " dim.b rndstr + DISP ;
+  ':: "Solve equation first" DISP ;
+  IFTE ; 
+'size STO
+':: 12 3 ^ / ; 'toft³ STO
+':: 12 3 ^ * ; 'toin³ STO
+':: 25.4 * ; 'tomm STO
+':: 25.4 / ; 'toin STO
+':: dim.t 2 * - ; 'inner STO
+
+(Instructions)
+'::
+  "
+Rectangular box solver:
+- 'brace' has functions to define internal bracing volume:
+  shelf: a horizontal shelf
+  side: a fore-aft vertical brace
+  face: a left-right vertical brace
+  circle: the volume of a circle of diameter x
+  rect: the volume of a rectangle of size x, y
+- 's' contains solvers for w, h, d, and v
+- 'p' contains presets for particular projects
+- 'size' returns outer box dimensions
+- 'inner' converts outer dimension to inner
+- 'toin³'/'toft³' dimensional conversion
+w, h, d, t, v, and b update the stored value.  They can be functions:
+w, h, d: inner overall dimensions
+t: panel thickness
+v: air volume
+b: bracing volume" 
+  DISP ;
+DUP EVAL 'help STO
