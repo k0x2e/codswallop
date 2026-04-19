@@ -3,7 +3,7 @@
   Parser )
 
 (XXX Reloader)
-':: "dev/parse.rpl" DSK> ; 'rl STO
+':: "clodparse.rpl" DSK> ; 'rl STO
 
 (Basic directory tree.)
 [dir:
@@ -82,8 +82,9 @@
       IFTE ;
     REP
     (Then push forward to the next newline or EOF.)
+    SST
     ':: text right #1 + DUP len <
-      ':: DUP 'right STO GET Parse.default.newline != ;
+      '::  DUP 'right STO GET Parse.default.newline != ;
       ':: DROP DROP #0 ;
       IFTE ;
     REP
@@ -357,9 +358,9 @@
         ':: DROPN "You should find space in your life for a ]" start mkinvalid ;
         '::
           `(Starting with the last directory object, string up all them tags.) 
-          i**.lastobj SWAP ':: I*.>dir ; SWAP * EVAL
+          I*.lastobj SWAP ':: I*.>dir ; SWAP * EVAL
           `(And pop a firstdir on the front.)
-          i**.nulltag SWAP I*.>dir
+          I*.nulltag SWAP I*.>dir
           cursor #1 + mkvalid ;
         IFTE ;
       IFT ;
@@ -569,7 +570,6 @@
   i** DIR ':: DUP 'i** SWAP + RCL SWAP 'I* SWAP + STO ; FOREACH DROP)
   i** CP 'I* STO
   ':: "read" FOPEN #0 READ 
-    " ;" + ":: " SWAP + parse ; 'pdisk STO 
-  ':: "read" FOPEN #0 READ peval ; 'I*.dsk> STO ;
+    " ;" + ":: " SWAP + parse ; 'pdisk STO ;
 IFT
   Parse STATICN 'Parse STO 
