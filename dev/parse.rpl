@@ -9,7 +9,7 @@
 [dir:
   :default: 
   [dir:
-    :spaces: { " " "
+    :spaces: { "" " " "
 " "	" }
     :reserved: { "}" "{" ":" ";" "[" "]" "'" "\"" }
     :newline: "
@@ -251,22 +251,6 @@
   { :count: #0 localcursor localalt delimiter typeok } LOCAL ;
 'Parse.common.composite STO
 
-(Look for numerals and return the final cursor position, plus whatever we
- got.  Does not set stop.)
-'::
-  ""
-  '::
-    cursor len <
-    ':: text cursor GET DUP
-      `(Increment cursor for anything between 0 and 9.)
-      ASC> DUP #48 >= SWAP #57 <= AND
-      ':: + cursor #1 + 'cursor STO #1 ;
-      ':: DROP #0 ;
-      IFTE ;
-    #0 IFTE ;
-  REP ;
-'Parse.common.getnumber STO
-
 (Retrieve a text string up to a closing character or EOF, and do a
  rudimentary escape character thing.  Does not set stop.)
 '::
@@ -291,10 +275,108 @@
   LOCAL ;
 'Parse.common.getstring STO
 
+(Partly convert a string to an integer.  The purpose here is to extract a
+ sequence of digits into an integer.  Can be called out of bounds.
+ Returns:
+ 3: Integer value
+ 2: Character now under cursor
+ 1: Digit count)
+'::
+  #0
+  '::
+    cursor len <
+    '::
+      '::
+        text cursor GET ASC> #48 - DUP DUP #0 >= SWAP #9 <= AND
+        ':: SWAP #10 * + count #1 + 'count STO cursor #1 + 'cursor STO
+          cursor len < ;
+        ':: DROP #0 ;
+        IFTE 
+        max #1 - DUP 'max STO AND ;
+      REP ;
+    IFT
+    cursor len <
+    ':: text cursor GET ;
+    ""
+    IFTE
+    count ;
+  { :count: #0 :max: #20 } LOCAL ;
+'Parse.common.getint STO
+
 
 (### Per type parsers.  These will either return a fully formed object by
  calling mkvalid, or fail by setting an error message with mkinvalid, or lay
  no claim at all by doing and returning nothing.)
+
+'::
+  text cursor GET "#" ==
+  '::
+    cursor #1 + 'cursor STO Parse.common.getint
+    SWAP Parse.default.spaces SWAP HAS AND
+    ':: cursor mkvalid ;
+    ':: DROP "Pound town is only for valid integers" start mkinvalid ;
+    IFTE ;
+  IFT ;
+'Parse.type.Integer STO
+
+'::
+  (Filter out anything that doesn't start with a sign, point, or numeral.)
+  text cursor GET DUP 
+  "." == OVER "-" == OR OVER "+" == OR 
+  SWAP ASC> DUP #48 >= SWAP #57 <= AND OR
+  '::
+    '::
+      (Advance cursor and set first sign flag if needed.)
+      text cursor GET DUP "+" ==
+      ':: DROP cursor #1 + 'cursor STO ;
+      ':: "-" == 
+        ':: cursor #1 + 'cursor STO
+          #-1 '-mantissa STO ;
+        IFT ;
+      IFTE
+      (Grab an integer portion, if any.)
+      Parse.common.getint 'iplen STO
+      (Now see if we've arrived at a fractional portion.)
+      DUP "." ==
+      '::
+        (There is a fractional portion coming up.)
+        DROP cursor #1 + 'cursor STO
+        Parse.common.getint 'fplen STO ;
+      ':: (No fractional portion.) #0 SWAP ;
+      IFTE
+      (Generate a signed integer mantissa.)
+      ROT #10 fplen ^ * -mantissa * ROT + i**.num>float SWAP
+      DUP "e" == iplen fplen OR AND
+      '::
+        (Try to read an exponent, sign first.)
+        cursor #1 + DUP 'cursor STO len <
+        '::
+          DROP text cursor GET
+          DUP "+" ==
+          ':: DROP cursor #1 + 'cursor STO ;
+          ':: "-" ==
+            ':: cursor #1 + 'cursor STO
+              #-1 '-exponent STO ;
+            IFT ;
+          IFTE ;
+        IFT
+        Parse.common.getint ;
+      ':: (No exponent at all, pretend it's valid.) #0 SWAP #1 ;
+      IFTE
+      (Check for closing whitespace or EOT.)
+      SWAP Parse.default.spaces SWAP HAS
+      (Verify we got a valid exponent and either part of the mantissa.)
+      AND fplen iplen OR AND
+      (Try not to overflow the underlying data type.)
+      OVER -exponent * iplen + #310 < AND
+      ':: (We made it!  Set the sign on the exponent and proceed.)
+        -exponent * fplen - i**.num>float 10 SWAP ^ * cursor mkvalid ;
+      ':: (We failed.)
+         DROP DROP "What kind of float is this" start mkinvalid ;
+      IFTE ;
+    { :-mantissa: #1 :-exponent: #1 :iplen: #0 :fplen: #0 } LOCAL ;
+  IFT ;
+'Parse.type.Float STO
 
 (List)
 '::
@@ -383,13 +465,6 @@
   IFT ;
 'Parse.type.Tag STO
 
-(Float)
-'::
-  text cursor GET ASC> DUP #48 >= SWAP #57 <= AND
-  ':: "u got a float over here" start mkinvalid ; IFT
-;
-'Parse.type.Float STO
-
 (String)
 '::
   `(All strings with a quote.)
@@ -405,46 +480,6 @@
     IFTE ;
   IFT ;
 'Parse.type.String STO
-
-(Integer)
-'::
-  `(All integers begin with a #.)
-  text cursor GET "#" ==
-  '::
-    cursor #1 + DUP 'cursor STO len <
-    '::
-      `(Optionally they can have a single + or -.)
-      text cursor GET DUP DUP "-" == SWAP "+" == OR 
-      ':: cursor #1 + 'cursor STO ;
-      ':: DROP "" ; 
-      IFTE
-      `(Sanity check the size of string we're trying to handle.)
-      getnumber DUP2 LEN maxdigits >
-      '::
-        DROP DROP "-" ==
-        "That's not nearly enough" "That's far too many" IFTE
-        start mkinvalid ;
-      '::
-        DROP DUP LEN
-        ':: 
-	  `(We actually got a number, so make it integral.)
-          + >INT
-          `(But throw it away and complain if there's trailing garbage.)
-          cursor len < ':: spaces text cursor GET HAS ; #1 IFTE
-          ':: cursor mkvalid ;
-          ':: DROP "Number please" cursor mkinvalid ;
-          IFTE ;
-        ':: 
-          `(No value at all is also an error.)
-          DROP DROP "This will never be an integer, my friend" 
-          start mkinvalid ;
-        IFTE ;
-      IFTE ;
-    `(Also catch EOF.)
-    ':: "You gotta take some characters to pound town" start mkinvalid ;
-    IFTE ;
-  IFT ;
-'Parse.type.Integer STO
 
 (Quote)
 '::
