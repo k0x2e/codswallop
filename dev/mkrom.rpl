@@ -234,7 +234,7 @@ Types.Builtin PUT
 
 (Make a new personality.)
 { {
-		::
+    ::
       SWAP
       #0
       I*.firstobj
@@ -243,7 +243,7 @@ Types.Builtin PUT
       "Codswallop RPL (" #3 PICK + " personality, " + 
       EPOCH >INT + ")" + SWAP +
       SWAP ".rom" + "personality/" SWAP + "write" FOPEN WRITE ;
-  	Types.Code
+    Types.Code
     Types.String
 } }
 #2
@@ -251,5 +251,24 @@ Types.Builtin PUT
 'NEW
 >BIN
 'mkrom.NEW STO
+
+(Make a new base-context personality with a different named store.)
+{ {
+    ::
+      ROTD SWAP
+      I*.>basecontext mkrom.serialize
+      "Codswallop RPL (" #3 PICK + " personality, " + 
+      EPOCH >INT + ")" + SWAP +
+      SWAP ".rom" + "personality/" SWAP + "write" FOPEN WRITE ;
+    Types.Directory
+    Types.Code
+    Types.String
+} }
+#3
+"Create a new personality from a base dictionary, name, and code."
+'NEWBASE
+>BIN
+'mkrom.NEWBASE STO
+
 
 mkrom STATICN 'mkrom STO

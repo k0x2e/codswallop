@@ -19,7 +19,7 @@
   DEDCONT?
   ':: #1 'ISDED? I*.sto ;
   ':: #0 'ISDED? I*.sto
-    I*.errmsg I*.swap " said: " I*.+str I*.swap I*.+str I*.disp
+    I*.errstate I*.drop I*.swap " said: " I*.+str I*.swap I*.+str I*.disp
     I*.clrrun ;
   I*.ifte
   ;
@@ -29,7 +29,7 @@
 'ARGS I*.sto
 
 (First, we try to open modules.rpl.)
-#1 'DEDCONT? I*.sto BASDIR "modules.rpl" I*.+str I*.dsk>
+#0 'DEDCONT? I*.sto BASDIR "modules.rpl" I*.+str I*.dsk>
 
 (Did it work?)
 ISDED?
@@ -72,7 +72,7 @@ I* QUOTE 'I* STO
 ARGS LEN
 ':: ARGS DSK> ;
 ':: 'REPL EXISTS
-  ':: VERSION DUP ANSI.settitle DISP REPL ;
+  ':: "Codswallop RPL" DUP ANSI.settitle DISP REPL ;
   ':: "Successfully failed to find REPL" DISP ;
   IFTE ;
 IFTE

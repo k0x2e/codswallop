@@ -1290,6 +1290,16 @@ def makebinprocs():
     rt.Stack.push(newcontext)
     return rt.Context.eval
   bins += [['>context', x]]
+
+  # Construct a new base context
+  def x(rt):
+    names = rt.Stack.pop()
+    code = rt.Stack.pop()
+    newcontext = typecontext(code, names)
+    rt.Stack.push(newcontext)
+    return rt.Context.eval
+  bins += [['>basecontext', x]]
+
   
   # List subset from left
   def x(rt):

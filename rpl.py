@@ -51,6 +51,8 @@ else:
 # Load a personality ROM.
 romboot(ourRT, f'personality/{personality}.rom')
 
+ourtypes.updatestore(ourRT)
+
 # Turn on Ctrl-C signal handling.
 signal.signal(signal.SIGINT, catchsigint)
 
