@@ -15,7 +15,8 @@
     :newline: "
 "
     :maxdigits: #15 
-    :margin: #78 ]
+    :margin: #78 
+    :symdir: builtins ]
   :common: [dir: ]
   :type: [dir: ] ]
 'Parse STO
@@ -120,6 +121,7 @@
     :mkinvalid: Parse.common.mkinvalid
     :getstring: Parse.common.getstring
     :getnumber: Parse.common.getnumber
+    :postsym: ()
     :maxdigits: Parse.default.maxdigits
     :spaces: Parse.default.spaces
     :reserved: Parse.default.reserved 
@@ -210,6 +212,15 @@
     IFT ;
   IFT ;
 'Parse.common.next STO
+
+(Symbol postprocessing.  Return some object instead of a symbol if it's in a
+ substitution directory.)
+'::
+  DUP 'builtins SWAP + DUP EXISTS
+  ':: RCL SWAP DROP ;
+  'DROP
+  IFTE ;
+'Parse.default.postsym STO
 
 (### Parse helpers.  These are common routines that can be helpful for
  studying multiple different types of objects.)
@@ -311,29 +322,39 @@
 '::
   text cursor GET "#" ==
   '::
-    cursor #1 + 'cursor STO Parse.common.getint
+    cursor #1 + 'cursor STO 
+    cursor len < ':: text cursor GET ; "" IFTE 
+    DUP "+" ==
+    ':: DROP cursor #1 + 'cursor STO #1 ;
+    ':: "-" == 
+      ':: cursor #1 + 'cursor STO #-1 ;
+      #1
+      IFTE ;
+    IFTE
+    Parse.common.getint
     SWAP Parse.default.spaces SWAP HAS AND
-    ':: cursor mkvalid ;
-    ':: DROP "Pound town is only for valid integers" start mkinvalid ;
+    ':: * cursor mkvalid ;
+    ':: DROP DROP "Pound town is only for valid integers" start mkinvalid ;
     IFTE ;
   IFT ;
 'Parse.type.Integer STO
 
 '::
-  (Filter out anything that doesn't start with a sign, point, or numeral.)
-  text cursor GET DUP 
-  "." == OVER "-" == OR OVER "+" == OR 
-  SWAP ASC> DUP #48 >= SWAP #57 <= AND OR
   '::
+    (Set first sign flag and advance cursor if needed.)
+    text cursor GET DUP "+" ==
+    ':: DROP cursor #1 + 'cursor STO ;
+    ':: "-" == 
+      ':: cursor #1 + 'cursor STO
+        #-1 '-mantissa STO ;
+      IFT ;
+    IFTE
+
+    (Only play Number Or Error if sign is followed with number stuff.)
+    cursor len < ':: text cursor GET ; " " IFTE DUP
+    "." == OVER "-" == OR OVER "+" == OR 
+    SWAP ASC> DUP #48 >= SWAP #57 <= AND OR
     '::
-      (Advance cursor and set first sign flag if needed.)
-      text cursor GET DUP "+" ==
-      ':: DROP cursor #1 + 'cursor STO ;
-      ':: "-" == 
-        ':: cursor #1 + 'cursor STO
-          #-1 '-mantissa STO ;
-        IFT ;
-      IFTE
       (Grab an integer portion, if any.)
       Parse.common.getint 'iplen STO
       (Now see if we've arrived at a fractional portion.)
@@ -374,8 +395,9 @@
       ':: (We failed.)
          DROP DROP "What kind of float is this" start mkinvalid ;
       IFTE ;
-    { :-mantissa: #1 :-exponent: #1 :iplen: #0 :fplen: #0 } LOCAL ;
-  IFT ;
+    ':: (Reset cursor in case we moved it.) start 'cursor STO ;
+    IFTE ;
+  { :-mantissa: #1 :-exponent: #1 :iplen: #0 :fplen: #0 } LOCAL ;
 'Parse.type.Float STO
 
 (List)
@@ -579,7 +601,7 @@
         ':: RCL cursor mkvalid ;
         ':: DROP "This symbol must exist at parse time" start mkinvalid ;
         IFTE ;
-      ':: cursor mkvalid ; 
+      ':: postsym cursor mkvalid ; 
       IFTE ;
     IFT ;
   { :length: #0 } LOCAL ;
