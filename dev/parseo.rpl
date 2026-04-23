@@ -1,0 +1,639 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Parser )
+
+(XXX Reloader)
+':: "dev/parse.rpl" DSK> ; 'rp STO
+
+(Basic directory tree.)
+[dir:
+  :default: 
+  [dir:
+    :spaces: { "" " " "
+" "	" }
+    :reserved: { "}" "{" ":" ";" "[" "]" "'" "\"" }
+    :newline: "
+"
+    :maxdigits: #15 
+    :margin: #78 
+    :symdir: builtins ]
+  :common: [dir: ]
+  :type: [dir: ]
+  :symbols: [dir: ] ]
+'Parse STO
+
+(List of parse routines, generally one per type, in order of precedence.)
+{ 
+  Parse.type.List
+  Parse.type.Code
+  Parse.type.Tag
+  Parse.type.String 
+  Parse.type.Integer
+  Parse.type.Float 
+  Parse.type.Quote 
+  Parse.type.Comment
+  Parse.type.Directory
+  Parse.type.Symbol
+  Parse.type.Else }
+'Parse.default.parsers STO
+
+(Super basic string to object parser, user side call.)
+':: 
+  ':: 
+    skip next valid
+    ':: DUP nulltoken SAME ':: DROP parseded ; IFT ;
+    'parseded
+    IFTE ;
+   {} Parse.default.environment ;
+'parse STO
+
+(Parse and evaluate.)
+':: 
+  '::
+    ':: 
+      skip next valid
+      ':: 
+        DUP nulltoken SAME 'DROP 
+        (':: DUP ANSI.tocolor EVAL ;)
+        'EVAL IFTE ;
+      'parseded
+      IFTE
+      stop NOT ;
+    REP ;
+  {} Parse.default.environment ;
+'peval STO
+
+(Report a parse error.)
+'::
+  (First back up the cursor if it's overrun the text.)
+  cursor len >= ':: len #1 - 'cursor STO ; IFT
+  (Then begin the chastizing.)
+  "Your words fail to become actions." DISP "" DISP
+  cursor DUP error LEN
+  '::
+    (Scan to the beginning of the text to find our line number.)
+    cursor
+    '::
+      DUP
+      ':: DUP text SWAP GET Parse.default.newline ==
+        ':: line #1 + 'line STO ; IFT
+        #1 - DUP ;
+      #0 IFTE ;
+    REP DROP
+    (Back up to the beginning of the string or the last newline.)
+    ':: left
+      ':: text left #1 - DUP 'left STO GET Parse.default.newline != ;
+      #0
+      IFTE ;
+    REP
+    (Then push forward to the next newline or EOF.)
+    ':: text right #1 + DUP len <
+      '::  DUP 'right STO GET Parse.default.newline != ;
+      ':: DROP DROP #0 ;
+      IFTE ;
+    REP
+    (Denote the line where we found our trouble.)
+    "On line " line + ":" + DISP
+    (Clip the relevant text, if any, and display it.)
+    len ':: text left right SUBS ; "" IFTE
+    DUP LEN Parse.default.margin >
+    ':: Parse.default.margin #1 - LEFT "…" + ; IFT
+    DISP
+    (Point to the user's troubles on the line.)
+    " " cursor left - DUP ROTD * "↑" + DISP
+    (And, within limits, center the error under the arrow.)
+    errlen #2 / -
+    #0 DUP2 > ROTD IFTE
+    Parse.default.margin errlen - DUP2 < ROTD IFTE
+    " " SWAP * error + DISP ;
+  { errlen left right :linepos: #0 :line: #1 } LOCAL ;
+'parseded STO
+
+(Default variable environment for parsing text.)
+'::
+  { text len
+    :cursor: #0
+    :valid: #0
+    :stop: #0
+    :altmode: #0
+    :error: "There is nothing here" 
+    :onechar: Parse.common.onechar
+    :next: Parse.common.next
+    :skip: Parse.common.skip
+    :composite: Parse.common.composite
+    :mkvalid: Parse.common.mkvalid
+    :mkinvalid: Parse.common.mkinvalid
+    :getstring: Parse.common.getstring
+    :getnumber: Parse.common.getnumber
+    :postsym: Parse.default.postsym
+    :maxdigits: Parse.default.maxdigits
+    :spaces: Parse.default.spaces
+    :reserved: Parse.default.reserved 
+    :parsers: Parse.default.parsers
+    :nulltoken: "(null)" }
+  SWAP + 
+  #3 PICK LEN #4 ROLLD
+  LOCAL ;
+'Parse.default.environment STO
+
+(Skip cursor past whitespace and set the stop flag if we're at the end.)
+':: 
+  '::
+    `(Are we at the end?)
+    cursor len <
+    '::
+      `(Advance through any whitespace.)
+      spaces text cursor GET HAS DUP
+      ':: cursor #1 + 'cursor STO ;
+      IFT ;
+    `(Set the stop flag at EOF and also just stop.)
+    ':: #1 'stop STO #0 ;
+    IFTE ;
+  REP ;
+'Parse.common.skip STO
+
+(Return the next character and True (really the cursor position) or only False.
+ Do not set stop flag.)
+':: 
+  `(Are we already at the end?)
+  cursor len <
+  `(No, fetch character and advance cursor.)
+  ':: text cursor GET cursor #1 + DUP 'cursor STO ;
+  `(Yes, just return false.)
+  #0 
+  IFTE ;
+'Parse.common.onechar STO
+
+(Mark the run as valid, and skip cursor ahead.  Resets the alt mode flag. 
+ Accepts the object and a new cursor location.  The generated object remains
+ on the stack.)
+'::
+  'cursor STO #1 'valid STO #0 'altmode STO
+  skip ;
+'Parse.common.mkvalid STO
+
+(Mark the run as invalid and record an error.  Accepts an error string and a
+ cursor location.)
+'::
+  'cursor STO 'error STO #0 'valid STO #1 'stop STO ;
+'Parse.common.mkinvalid STO
+
+(Advance parser through one object.  This provides 'start' as an initial
+ cursor position in case of errors partway through.)
+'::
+  `(Silently refuse to run a red light.)
+  stop NOT
+  '::
+    `(Alt mode flags and in-between whitespace are soaked up here.)
+    ':: 
+      text cursor GET DUP DUP "`" == SWAP "~" == OR
+      '::
+        "`" == 'altmode STO
+        cursor #1 + 'cursor STO
+        skip stop NOT ;
+      ':: DROP #0 ;
+      IFTE ; 
+    REP
+    `(Check again to make sure we're not done.)
+    stop NOT
+    '::
+      `(Clear the valid flag and step through our known parsers.)
+      #0 'valid STO
+      parsers LEN cursor
+      '::
+        '::
+          max
+          ':: 
+            parsers idx GETE
+            idx #1 + 'idx STO
+            `(Repeat until something flagged valid, stopped, or there
+              are no more parsers to try.)
+            valid stop OR NOT idx max < AND ;
+          #0 IFTE ;
+        REP ;
+      { start max :idx: #0 }
+      LOCAL ; 
+    IFT ;
+  IFT ;
+'Parse.common.next STO
+
+(Symbol postprocessing.  Return some object instead of a symbol if it's in a
+ substitution directory.)
+'::
+  DUP 'Parse.symbols SWAP + DUP EXISTS
+  ':: RCL SWAP DROP ;
+  'DROP
+  IFTE ;
+'Parse.default.postsym STO
+
+(### Parse helpers.  These are common routines that can be helpful for
+ studying multiple different types of objects.)
+
+(Retrieve the contents of a list.  Accepts:
+  typeok: Secondary check object for restricted composites like directories
+  delimiter: Closing character to stop at)
+'::
+  `(Skip any whitespace after the opening delimiter, and store
+    the current alt mode.)
+  skip altmode cursor
+  '::
+    '::
+      `(Before every loop, make sure we're not stopped.)
+      stop NOT
+      '::
+        `(Check to see if the cursor is on a closing delimiter.)
+        text cursor GET delimiter !=
+        `(Not a delimiter, try for an object.)
+        '::
+          `(Reset alt mode for each object.)
+          localalt 'altmode STO next 
+          `(Check for both a valid object and an appropriate one.)
+          valid 'typeok #0 IFTE
+          '::
+            `(Suppress null objects as needed.)
+            DUP nulltoken SAME
+            'DROP ':: count #1 + 'count STO ;
+            IFTE cursor 'localcursor STO #1 ;
+          `(Invalid object, so drop everything we have so far and bail.
+            Include a valid but inappropriate one in our DROP.)
+          ':: count DROPN #0 ;
+          IFTE ;
+	`(If we're on a delimiter, force a valid flag and bail.)
+        ':: #1 'valid STO #0 ;
+        IFTE ;
+      #0 IFTE ;
+    REP valid count IFT ;
+  { :count: #0 localcursor localalt delimiter typeok } LOCAL ;
+'Parse.common.composite STO
+
+(Retrieve a text string up to a closing character or EOF, and do a
+ rudimentary escape character thing.  Does not set stop.)
+'::
+  ':: 
+    ""
+    '::
+      cursor len <
+      '::
+        text cursor GET DUP delimiter !=
+        '::
+          "\\" ==
+          ':: cursor #1 + 'cursor STO ; IFT
+          cursor len <
+          ':: text cursor GET +
+            cursor #1 + 'cursor STO #1 ;
+          #0 IFTE ;
+        ':: DROP #0 ;
+        IFTE ;
+      #0 IFTE ;
+    REP ;
+  { delimiter }
+  LOCAL ;
+'Parse.common.getstring STO
+
+(Partly convert a string to an integer.  The purpose here is to extract a
+ sequence of digits into an integer.  Can be called out of bounds.
+ Returns:
+ 3: Integer value
+ 2: Character now under cursor
+ 1: Digit count)
+'::
+  #0
+  '::
+    cursor len <
+    '::
+      '::
+        text cursor GET ASC> #48 - DUP DUP #0 >= SWAP #9 <= AND
+        ':: SWAP #10 * + count #1 + 'count STO cursor #1 + 'cursor STO
+          cursor len < ;
+        ':: DROP #0 ;
+        IFTE 
+        max #1 - DUP 'max STO AND ;
+      REP ;
+    IFT
+    cursor len <
+    ':: text cursor GET ;
+    ""
+    IFTE
+    count ;
+  { :count: #0 :max: #20 } LOCAL ;
+'Parse.common.getint STO
+
+
+(### Per type parsers.  These will either return a fully formed object by
+ calling mkvalid, or fail by setting an error message with mkinvalid, or lay
+ no claim at all by doing and returning nothing.)
+
+'::
+  text cursor GET "#" ==
+  '::
+    cursor #1 + 'cursor STO 
+    cursor len < ':: text cursor GET ; "" IFTE 
+    DUP "+" ==
+    ':: DROP cursor #1 + 'cursor STO #1 ;
+    ':: "-" == 
+      ':: cursor #1 + 'cursor STO #-1 ;
+      #1
+      IFTE ;
+    IFTE
+    Parse.common.getint
+    SWAP Parse.default.spaces SWAP HAS AND
+    ':: * cursor mkvalid ;
+    ':: DROP DROP "Pound town is only for valid integers" start mkinvalid ;
+    IFTE ;
+  IFT ;
+'Parse.type.Integer STO
+
+'::
+  '::
+    (Set first sign flag and advance cursor if needed.)
+    text cursor GET DUP "+" ==
+    ':: DROP cursor #1 + 'cursor STO ;
+    ':: "-" == 
+      ':: cursor #1 + 'cursor STO
+        #-1 '-mantissa STO ;
+      IFT ;
+    IFTE
+
+    (Only play Number Or Error if sign is followed with number stuff.)
+    cursor len < ':: text cursor GET ; " " IFTE DUP
+    "." == OVER "-" == OR OVER "+" == OR 
+    SWAP ASC> DUP #48 >= SWAP #57 <= AND OR
+    '::
+      (Grab an integer portion, if any.)
+      Parse.common.getint 'iplen STO
+      (Now see if we've arrived at a fractional portion.)
+      DUP "." ==
+      '::
+        (There is a fractional portion coming up.)
+        DROP cursor #1 + 'cursor STO
+        Parse.common.getint 'fplen STO ;
+      ':: (No fractional portion.) #0 SWAP ;
+      IFTE
+      (Generate a signed integer mantissa.)
+      ROT #10 fplen ^ * -mantissa * ROT + i**.num>float SWAP
+      DUP "e" == iplen fplen OR AND
+      '::
+        (Try to read an exponent, sign first.)
+        cursor #1 + DUP 'cursor STO len <
+        '::
+          DROP text cursor GET
+          DUP "+" ==
+          ':: DROP cursor #1 + 'cursor STO ;
+          ':: "-" ==
+            ':: cursor #1 + 'cursor STO
+              #-1 '-exponent STO ;
+            IFT ;
+          IFTE ;
+        IFT
+        Parse.common.getint ;
+      ':: (No exponent at all, pretend it's valid.) #0 SWAP #1 ;
+      IFTE
+      (Check for closing whitespace or EOT.)
+      SWAP Parse.default.spaces SWAP HAS
+      (Verify we got a valid exponent and either part of the mantissa.)
+      AND fplen iplen OR AND
+      (Try not to overflow the underlying data type.)
+      OVER -exponent * iplen + #310 < AND
+      ':: (We made it!  Set the sign on the exponent and proceed.)
+        -exponent * fplen - i**.num>float 10 SWAP ^ * cursor mkvalid ;
+      ':: (We failed.)
+         DROP DROP "What kind of float is this" start mkinvalid ;
+      IFTE ;
+    ':: (Reset cursor in case we moved it.) start 'cursor STO ;
+    IFTE ;
+  { :-mantissa: #1 :-exponent: #1 :iplen: #0 :fplen: #0 } LOCAL ;
+'Parse.type.Float STO
+
+(List)
+'::
+  `(Catch spurious closing braces.)
+  text cursor GET DUP "}" ==
+  ':: DROP "Wherever this was supposed to go, it wasn't here" cursor mkinvalid ;
+  '::
+    "{" ==
+    '::
+      cursor #1 + 'cursor STO #1 "}" composite valid
+      `(Let any downstream error slip through if invalid.)
+      ':: 
+        stop
+        `(Valid and stopped means we never found our closing brace.)
+        ':: DROPN "Somewhere, a list is missing its }" start mkinvalid ;
+        `(Otherwise we made it, with a list of objects and a count on the
+          stack.)
+        ':: >LST cursor #1 + mkvalid ;
+        IFTE ;
+      IFT ;
+    IFT ;
+  IFTE ;
+'Parse.type.List STO
+
+(Code, basically a carbon copy of a list.)
+'::
+  text cursor GET ";" ==
+  ':: "Perhaps this should be somewhere else" cursor mkinvalid ;
+  '::
+    text cursor DUP #1 + SUBS "::" ==
+    '::
+      cursor #2 + 'cursor STO #1 ";" composite valid
+      ':: stop
+        ':: DROPN "Semicolons are cool, you should try one more" start mkinvalid ;
+        ':: >CODE cursor #1 + mkvalid ;
+        IFTE ;
+      IFT ;
+    IFT ;
+  IFTE ;
+'Parse.type.Code STO
+
+(Directory, one more variation on the theme.  This checks for only tags and
+ builds a linked list by itself.)
+'::
+  text cursor GET "]" ==
+  ':: "Perhaps this should be somewhere else" cursor mkinvalid ;
+  '::
+    text cursor DUP #4 + SUBS "[dir:" ==
+    '::
+      cursor #5 + 'cursor STO 
+      `(Secondary validation to make sure only tags are making it in.
+        Null tokens can slip through since they're silently dropped.)
+      ':: DUP DUP nulltoken SAME SWAP TYPE Types.Tag == OR
+        #1
+        ':: 
+          "Directories can only contain tags" localcursor mkinvalid DROP #0 ;
+        IFTE ;
+      "]" composite valid
+      ':: stop
+        ':: DROPN "You should find space in your life for a ]" start mkinvalid ;
+        '::
+          `(Starting with the last directory object, string up all them tags.) 
+          i**.lastobj SWAP ':: I*.>dir ; SWAP * EVAL
+          `(And pop a firstdir on the front.)
+          i**.nulltag SWAP I*.>dir
+          cursor #1 + mkvalid ;
+        IFTE ;
+      IFT ;
+    IFT ;
+  IFTE ;
+'Parse.type.Directory STO
+
+(Tag, janky janky right now fix it pls)
+'::
+  text cursor GET ":" ==
+  ':: 
+    cursor #1 + 'cursor STO
+    `(Get the string enclosed by :. If it's empty, it was probably a ::.)
+    ":" getstring DUP LEN 
+    ':: >SYM
+      cursor #1 + 'cursor STO skip
+      next SWAP >TAG ;
+    `(Back cursor off if we aren't doing anything.)
+    ':: DROP cursor #1 - 'cursor STO ;
+    IFTE ;
+  IFT ;
+'Parse.type.Tag STO
+
+(String)
+'::
+  `(All strings with a quote.)
+  text cursor GET "\"" == 
+  '::
+    cursor #1 + 'cursor STO "\"" getstring
+    cursor len < ':: text cursor GET "\"" == ; #0 IFTE
+    ':: cursor #1 + mkvalid ;
+    `(They also end with a quote.)
+    ':: DROP 
+      "Strings don't just start with quotes"
+      start mkinvalid ;
+    IFTE ;
+  IFT ;
+'Parse.type.String STO
+
+(Quote)
+'::
+  `(All quotes begin with '.)
+  text cursor GET "'" ==
+  '::
+    `(Catch EOF.)
+    cursor #1 + 'cursor STO skip stop
+    ':: "Quote... what" start mkinvalid ;
+    '::
+      next valid
+      ':: 
+	`(Disappearing objects can't go into quotes.)
+        DUP nulltoken SAME
+        ':: DROP  "You should put something corporeal here" start #1 +
+          mkinvalid ;
+        ':: QUOTE cursor mkvalid ;
+        IFTE ;
+      IFT ;
+    IFTE ;
+  IFT ;
+'Parse.type.Quote STO
+
+(Comment)
+'::
+  `(Catch close parens as a public service.)
+  text cursor GET DUP ")" ==
+  ':: "This looks like a shut and open case" cursor mkinvalid ;
+  IFT "(" ==
+  '::
+    '::
+      ':: cursor #1 + DUP 'cursor STO len < depth AND
+        '::
+          `(Count nested parentheses up and down as needed.)
+          text cursor GET DUP "(" == SWAP ")" == - depth + 'depth STO
+          #1 ;
+        #0
+        IFTE ;
+      REP
+      depth
+      `(Catch an unclosed comment.)
+      ':: "These remarks have gone on far too long" start mkinvalid ;
+      `(And pick between a real object and the null token according to alt
+        mode.  The null token is shunned in several places.)
+      ':: text start #1 + cursor #2 - SUBS I*.str>rem
+        altmode ':: DROP nulltoken ; IFT 
+        cursor mkvalid ;
+      IFTE ; 
+    { :depth: #1 } LOCAL ;
+  IFT ;
+'Parse.type.Comment STO
+
+(Symbol: one or more dot-separated names.  Returns a list of strings for now.)
+'::
+  `(Make no claim if at EOF, whitespace, or reserved.)
+  '::
+    '::
+      `(Read one name segment, stopping at dot, space, reserved, or EOF.)
+      ""
+      '::
+        cursor len <
+        '::
+          text cursor GET DUP
+          reserved SWAP HAS
+          '::
+            DROP DROP "Breakin shit babes" start mkinvalid #0 ;
+          '::
+            DUP "." == OVER spaces SWAP HAS OR
+            ':: DROP #0 ;
+            ':: + cursor #1 + 'cursor STO #1 ;
+            IFTE ;
+          IFTE ;
+        #0 IFTE ;
+      REP
+      (Don't try to continue if an error is already flagged.)
+      stop
+      #0
+      '::
+        `(An empty segment is not a valid name.)
+        DUP LEN NOT
+        ':: DROP "A symbol name must not be empty" start mkinvalid #0 ;
+        '::
+          length #1 + 'length STO
+          `(Continue only if the next character is a dot; consume it.)
+          cursor len <
+          ':: text cursor GET "." ==
+            ':: cursor #1 + 'cursor STO #1 ;
+            #0 IFTE ;
+          #0 IFTE ;
+        IFTE ;
+      IFTE ;
+    REP
+    stop NOT 
+    '::
+      length I*.>sym altmode
+      ':: DUP EXISTS
+        ':: RCL cursor mkvalid ;
+        ':: DROP "This symbol must exist at parse time" start mkinvalid ;
+        IFTE ;
+      ':: postsym cursor mkvalid ; 
+      IFTE ;
+    IFT ;
+  { :length: #0 } LOCAL ;
+'Parse.type.Symbol STO
+
+(This is where we end up when we're outta chances.)
+'::
+  "Whatever this is, it isn't" cursor mkinvalid ;
+'Parse.type.Else STO 
+
+(Temp)
+':: #2 `PICK ; 'OVER STO
+
+
+(Also temp!)
+':: "dev/" 'BASDIR STO "" "dev/boot.rpl" I*.dsk> ;
+'boot STO
+
+'i** EXISTS
+'::
+  (I* 'I* STO
+  i** DIR ':: DUP 'i** SWAP + RCL SWAP 'I* SWAP + STO ; FOREACH DROP)
+  i** CP 'I* STO
+  ':: "read" FOPEN #0 READ 
+    " ;" + ":: " SWAP + parse ; 'pdisk STO 
+  ':: "read" FOPEN #0 READ peval ; 'I*.dsk> STO ;
+IFT
+  Parse STATICN 'Parse STO 
+
+(Enable compilation of sysrpl.)
+i** 'Parse.symbols STO

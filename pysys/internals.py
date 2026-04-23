@@ -285,6 +285,12 @@ def makebinprocs():
     return rt.Context.eval
   bins += [['pick', x]]
   
+  # Pick line 2.
+  def x(rt):
+    rt.Stack.push(rt.Stack.data[len(rt.Stack.data)-2])
+    return rt.Context.eval
+  bins += [['over', x]]
+  
   # Evaluate.
   def x(rt):
     return rt.Stack.pop().eval
@@ -648,7 +654,12 @@ def makebinprocs():
     else: return el.eval
   bins += [['ifte', x]]
 
-
+  # Restart
+  def x(rt):
+    rt.Context.ip = 0
+    return rt.Context.eval
+  bins += [['rst', x]]
+  
   ### Mathemagics
   # Parity
   def x(rt):
