@@ -14,28 +14,28 @@
 { :name: NAMES
   :args: #0
   :hint: "Return a list of all global symbols."
-  :table: { { :: `I*.firstobj `I*.dir ; } } }
+  :table: { { :: firstobj dir ; } } }
 I*.stobin
 
 (List of names in a directory.)
 { :name: DIR
   :args: #1
   :hint: "Return a list of all names in a directory."
-  :table: { { I*.dir Types.Directory } } }
+  :table: { { dir Types.Directory } } }
 I*.stobin
 
 (Object type.)
 { :name: TYPE
   :args: #1
   :hint: "Return an integer representing the type of an object."
-  :table: { { I*.type Types.Any } } }
+  :table: { { type Types.Any } } }
 I*.stobin
 
 (Introspect.)
 { :name: SELF
   :args: #0
   :hint: "Return the currently executing code block."
-  :table: { { I*.self } } }
+  :table: { { self } } }
 I*.stobin
 
 
@@ -47,16 +47,16 @@ I*.stobin
   :hint: "Open a text file for reading or writing."
   :table:
   { { ::
-        ':: name attr "read" `I*.== "r"
-          ':: attr "write" `I*.== "w"
-            ':: attr "append" `I*.== "a"
+        ':: name attr "read" == "r"
+          ':: attr "write" == "w"
+            ':: attr "append" == "a"
               ':: attr "A file can only be \"read\", \"write\", or \"append\""
-                ':: `I*.ded ; `I*.beval ;
-              `I*.ifte ;
-            `I*.ifte ;
-          `I*.ifte 
-  	  `I*.fopen ;
-        { attr name } `I*.local ;
+                ':: ded ; beval ;
+              ifte ;
+            ifte ;
+          ifte 
+  	  fopen ;
+        { attr name } local ;
       Types.String Types.String } } }
 I*.stobin
 
@@ -64,56 +64,56 @@ I*.stobin
 { :name: FCLOSE
   :args: #1
   :hint: "Close a file."
-  :table: { { I*.fclose Types.Handle } } }
+  :table: { { fclose Types.Handle } } }
 I*.stobin
 
 (Check if a file is at EOF.)
 { :name: EOF
   :args: #1
   :hint: "Report whether a file is at EOF (if open for write, always #0.)"
-  :table: { { I*.feof Types.Handle } } }
+  :table: { { feof Types.Handle } } }
 I*.stobin
 
 (Read some bytes from a file.)
 { :name: READ
   :args: #2
   :hint: "Read n characters from a file (or all of them, if n<1.)"
-  :table: { { I*.fread Types.Handle Types.Integer } } }
+  :table: { { fread Types.Handle Types.Integer } } }
 I*.stobin
 
 (Read a line from a file.)
 { :name: READL
   :args: #1
   :hint: "Read a whole line from a file."
-  :table: { { I*.freadline Types.Handle } } }
+  :table: { { freadline Types.Handle } } }
 I*.stobin
 
 (Write to a file.)
 { :name: WRITE
   :args: #2
   :hint: "Write a string to a file, with a newline."
-  :table: { { I*.fwrite Types.String Types.Handle } } }
+  :table: { { fwrite Types.String Types.Handle } } }
 I*.stobin
 
 (Write to a file.)
 { :name: WRITEN
   :args: #2
   :hint: "Write a string to a file, without a newline."
-  :table: { { I*.fwriten Types.String Types.Handle } } }
+  :table: { { fwriten Types.String Types.Handle } } }
 I*.stobin
 
 (Console input.)
 { :name: PROMPT
   :args: #1
   :hint: "Line input from stdin, with x as a prompt."
-  :table: { { I*.prompt Types.Any } } }
+  :table: { { prompt Types.Any } } }
 I*.stobin
 
 (Time.)
 { :name: EPOCH
   :args: #0
   :hint: "Returns epoch time as a floating point number."
-  :table: { { I*.epoch } } }
+  :table: { { epoch } } }
 I*.stobin
 
 ( ### Stack manipulation )
@@ -122,101 +122,101 @@ I*.stobin
 { :name: STACK
   :args: #0
   :hint: "Push stack onto the stack."
-  :table: { { I*.stack } } }
+  :table: { { stack } } }
 I*.stobin
 
 (Drop.)
 { :name: DROP
   :args: #1
   :hint: "Pop and discard the first line of the stack."
-  :table: { { I*.drop Types.Any } } }
+  :table: { { drop Types.Any } } }
 I*.stobin
 
 (Drop multiple.)
 { :name: DROPN
   :args: #1
   :hint: "Drop the first n lines off the stack."
-  :table: { { I*.dropn Types.Integer } } }
+  :table: { { dropn Types.Integer } } }
 I*.stobin
 
 (Evaluate.)
 { :name: EVAL
   :args: #1
   :hint: "Evaluate the object on the first line of the stack."
-  :table: { { I*.eval Types.Any } } }
+  :table: { { eval Types.Any } } }
 I*.stobin
 
 (Swap.)
 { :name: SWAP
   :args: #2
   :hint: "Swap lines 1 and 2 of the stack."
-  :table: { { I*.swap Types.Any Types.Any } } }
+  :table: { { swap Types.Any Types.Any } } }
 I*.stobin
 
 (Duplicate.)
 { :name: DUP
   :args: #1
   :hint: "Duplicate the first line of the stack."
-  :table: { { I*.dup Types.Any } } }
+  :table: { { dup Types.Any } } }
 I*.stobin
 
 { :name: DUP2
   :args: #2
   :hint: "Duplicate the first and second lines of the stack."
-  :table: { { I*.dup2 Types.Any Types.Any } } }
+  :table: { { dup2 Types.Any Types.Any } } }
 I*.stobin
 
 { :name: DUPN
   :args: #1
   :hint: "Duplicate n lines of the stack."
-  :table: { { I*.dupn Types.Integer } } }
+  :table: { { dupn Types.Integer } } }
 I*.stobin
 
 (Pick.)
 { :name: PICK
   :args: #1
   :hint: "Pick line n from the stack."
-  :table: { { I*.pick Types.Integer } } }
+  :table: { { pick Types.Integer } } }
 I*.stobin
 
 (Rotate.)
 { :name: ROT
   :args: #3
   :hint: "Roll the first 3 lines of the stack up."
-  :table: { { I*.rot Types.Any Types.Any Types.Any } } }
+  :table: { { rot Types.Any Types.Any Types.Any } } }
 I*.stobin
 
 { :name: ROTD
   :args: #3
   :hint: "Roll the first 3 lines of the stack down."
-  :table: { { I*.rotd Types.Any Types.Any Types.Any } } }
+  :table: { { rotd Types.Any Types.Any Types.Any } } }
 I*.stobin
 
 (Roll.)
 { :name: ROLL
   :args: #1
   :hint: "Roll the first n lines of the stack up."
-  :table: { { I*.roll Types.Integer } } }
+  :table: { { roll Types.Integer } } }
 I*.stobin
 
 { :name: ROLLD
   :args: #1
   :hint: "Roll the first n lines of the stack down."
-  :table: { { I*.rolld Types.Integer } } }
+  :table: { { rolld Types.Integer } } }
 I*.stobin
 
 (Require.)
 { :name: REQUIRE
   :args: #1
   :hint: "Require n objects on the stack to continue."
-  :table: { { I*.require Types.Integer } } }
+  :table: { { require Types.Integer } } }
 I*.stobin
 
 (Copy.)
 { :name: CP
   :args: #1
   :hint: "Return a new copy of an object.  This is only useful for mutable types (tag, directory, user types.)"
-  :table: { { I*.cp Types.Any } } }
+  :table: { { cp Types.Any } } }
 I*.stobin
 
 
@@ -226,7 +226,7 @@ I*.stobin
 { :name: DSK>
   :args: #1
   :hint: "Read a file from disk and shove it straight into the parser."
-  :table: { { I*.dsk> Types.String } } }
+  :table: { { dsk> Types.String } } }
 I*.stobin
 
 
@@ -236,8 +236,8 @@ I*.stobin
   :args: #2
   :hint: "Write an object into the named store, either to a local variable if it exists, or to the main store (or into a tag)."
   :table:
-  { { I*.sto   Types.Any Types.Symbol }
-    { I*.stoto Types.Any Types.Tag } } }
+  { { sto   Types.Any Types.Symbol }
+    { stoto Types.Any Types.Tag } } }
 I*.stobin
 
 (Recall symbol)
@@ -245,8 +245,8 @@ I*.stobin
   :args: #1
   :hint: "Recall an object from the most local named store that has it, or extract an object from a tag."
   :table:
-  { { I*.rcl     Types.Symbol }
-    { I*.rclfrom Types.Tag } } }
+  { { rcl     Types.Symbol }
+    { rclfrom Types.Tag } } }
 I*.stobin
 
 (Dereference symbol)
@@ -254,7 +254,7 @@ I*.stobin
   :args: #1
   :hint: "Return de reference of the most local tag for this symbol in the named store."
   :table:
-  { { I*.deref Types.Symbol } } }
+  { { deref Types.Symbol } } }
 I*.stobin
 
 (Does it exist?)
@@ -262,7 +262,7 @@ I*.stobin
   :args: #1
   :hint: "Check to see if a symbol exists in the current named store (including locals.)"
   :table:
-  { { I*.exists Types.Symbol } } }
+  { { exists Types.Symbol } } }
 I*.stobin
 
 (Erase name)
@@ -270,14 +270,14 @@ I*.stobin
   :args: #1
   :hint: "Remove an object from the most local named store."
   :table:
-  { { I*.rm Types.Symbol } } }
+  { { rm Types.Symbol } } }
 I*.stobin
 
 (New local context)
 { :name: LOCAL
   :args: #2
   :hint: "Create and evaluate a local variable context.  Stack level 2 contains the code which will run in the context; stack level 1 contains a list of symbol names for that context.  Levels 3 and up contain the objects to be stored."
-  :table: { { I*.local Types.Code Types.List } } }
+  :table: { { local Types.Code Types.List } } }
 I*.stobin
 
 
@@ -286,28 +286,28 @@ I*.stobin
 { :name: BAIL
   :args: #0
   :hint: "Bail out of a context (pop one off the call stack)."
-  :table: { { I*.bail } } }
+  :table: { { bail } } }
 I*.stobin
 
 (Bail-eval)
 { :name: BEVAL
   :args: #1
   :hint: "Bail out of a context and evaluate a new one (this is more or less a goto.)"
-  :table: { { I*.beval Types.Any } } }
+  :table: { { beval Types.Any } } }
 I*.stobin
 
 (If then)
 { :name: IFT
   :args: #2
   :hint: "If stack level 2 is true, then evaluate stack level 1."
-  :table: { { I*.ift Types.Any Types.Any } } }
+  :table: { { ift Types.Any Types.Any } } }
 I*.stobin
 
 (If then else)
 { :name: IFTE
   :args: #3
   :hint: "If stack level 3 is true, then evaluate line 2, else evaluate line 1."
-  :table: { { I*.ifte Types.Any Types.Any Types.Any } } }
+  :table: { { ifte Types.Any Types.Any Types.Any } } }
 I*.stobin
 
 
@@ -317,8 +317,8 @@ I*.stobin
   :args: #1
   :hint: "Determine if a number is odd."
   :table:
-  { { I*.odd Types.Integer } 
-    { I*.odd Types.Float } } }
+  { { odd Types.Integer } 
+    { odd Types.Float } } }
 I*.stobin
 
 (Absolute value)
@@ -326,8 +326,8 @@ I*.stobin
   :args: #1
   :hint: "Return absolute value of a number."
   :table:
-  { { I*.absint Types.Integer }
-    { I*.absfloat Types.Float } } }
+  { { absint Types.Integer }
+    { absfloat Types.Float } } }
 I*.stobin
 
 (Addition)
@@ -335,18 +335,18 @@ I*.stobin
   :args: #2
   :hint: "Add or concatenate two objects."
   :table:
-  { { I*.+int   Types.Integer Types.Integer }
-    { I*.+float Types.Float   Types.Float }
-    { I*.+float Types.Integer Types.Float }
-    { I*.+float Types.Float   Types.Integer }
-    { I*.+str   Types.String  Types.String }
-    { I*.catlist  Types.List    Types.List }
-    { I*.list+  Types.Any     Types.List }
-    { I*.+str   Types.String  Types.Any }
-    { I*.+list  Types.List    Types.Any }
-    { I*.+str   Types.Any     Types.String }
-    { I*.catcode  Types.Code    Types.Code } 
-    { I*.+sym   Types.Symbol  Types.Symbol } } }
+  { { +int   Types.Integer Types.Integer }
+    { +float Types.Float   Types.Float }
+    { +float Types.Integer Types.Float }
+    { +float Types.Float   Types.Integer }
+    { +str   Types.String  Types.String }
+    { catlist  Types.List    Types.List }
+    { list+  Types.Any     Types.List }
+    { +str   Types.String  Types.Any }
+    { +list  Types.List    Types.Any }
+    { +str   Types.Any     Types.String }
+    { catcode  Types.Code    Types.Code } 
+    { +sym   Types.Symbol  Types.Symbol } } }
 I*.stobin
 
 (Power)
@@ -354,10 +354,10 @@ I*.stobin
   :args: #2
   :hint: "Arithmetic power (y^x)."
   :table:
-  { { I*.^int   Types.Integer Types.Integer }
-    { I*.^float Types.Float   Types.Float }
-    { I*.^float Types.Integer Types.Float }
-    { I*.^float Types.Float   Types.Integer } } }
+  { { ^int   Types.Integer Types.Integer }
+    { ^float Types.Float   Types.Float }
+    { ^float Types.Integer Types.Float }
+    { ^float Types.Float   Types.Integer } } }
 I*.stobin
 
 (Multiply)
@@ -365,13 +365,13 @@ I*.stobin
   :args: #2
   :hint: "Arithmetic multiply, or repeat strings, lists, or programs."
   :table:
-  { { I*.*int   Types.Integer Types.Integer }
-    { I*.*float Types.Float   Types.Float }
-    { I*.*float Types.Integer Types.Float }
-    { I*.*float Types.Float   Types.Integer }
-    { I*.*str   Types.String  Types.Integer }
-    { I*.*lst 	Types.List    Types.Integer }
-    { I*.*code	Types.Code    Types.Integer } } }
+  { { *int   Types.Integer Types.Integer }
+    { *float Types.Float   Types.Float }
+    { *float Types.Integer Types.Float }
+    { *float Types.Float   Types.Integer }
+    { *str   Types.String  Types.Integer }
+    { *lst 	Types.List    Types.Integer }
+    { *code	Types.Code    Types.Integer } } }
 I*.stobin
 
 (Subtract)
@@ -379,10 +379,10 @@ I*.stobin
   :args: #2
   :hint: "Arithmetic subtraction."
   :table:
-  { { I*.-int   Types.Integer Types.Integer }
-    { I*.-float Types.Float   Types.Float }
-    { I*.-float Types.Integer Types.Float }
-    { I*.-float Types.Float   Types.Integer } } }
+  { { -int   Types.Integer Types.Integer }
+    { -float Types.Float   Types.Float }
+    { -float Types.Integer Types.Float }
+    { -float Types.Float   Types.Integer } } }
 I*.stobin
 
 (Divide)
@@ -390,10 +390,10 @@ I*.stobin
   :args: #2
   :hint: "Arithmetic division."
   :table:
-  { { I*./int   Types.Integer Types.Integer }
-    { I*./float Types.Float   Types.Float }
-    { I*./float Types.Integer Types.Float }
-    { I*./float Types.Float   Types.Integer } } }
+  { { /int   Types.Integer Types.Integer }
+    { /float Types.Float   Types.Float }
+    { /float Types.Integer Types.Float }
+    { /float Types.Float   Types.Integer } } }
 I*.stobin
 
 (Modulo)
@@ -401,10 +401,10 @@ I*.stobin
   :args: #2
   :hint: "Arithmetic division (remainder)."
   :table:
-  { { I*.modint   Types.Integer Types.Integer }
-    { I*.modfloat Types.Float   Types.Float }
-    { I*.modfloat Types.Integer Types.Float }
-    { I*.modfloat Types.Float   Types.Integer } } }
+  { { modint   Types.Integer Types.Integer }
+    { modfloat Types.Float   Types.Float }
+    { modfloat Types.Integer Types.Float }
+    { modfloat Types.Float   Types.Integer } } }
 I*.stobin
 
 (Negate)
@@ -412,15 +412,15 @@ I*.stobin
   :args: #1
   :hint: "Negate a number."
   :table:
-  { { I*.neg Types.Integer }
-    { I*.neg Types.Float } } }
+  { { neg Types.Integer }
+    { neg Types.Float } } }
 I*.stobin
 
 (Random)
 { :name: RND
   :args: #0
   :hint: "Return a random number between 0 and 1."
-  :table: { { I*.rnd } } }
+  :table: { { rnd } } }
 I*.stobin
 
 (Integer portion)
@@ -428,8 +428,8 @@ I*.stobin
   :args: #1
   :hint: "Return integer portion of floating point number."
   :table:
-  { { I*.ip Types.Float }
-    { I*.ip Types.Integer } } }
+  { { ip Types.Float }
+    { ip Types.Integer } } }
 I*.stobin
 
 
@@ -438,42 +438,42 @@ I*.stobin
 { :name: BNOT
   :args: #1
   :hint: "Bitwise NOT (one's complement) of integer."
-  :table: { { I*.bnot Types.Integer } } }
+  :table: { { bnot Types.Integer } } }
 I*.stobin
 
 (Bitwise shift left)
 { :name: BSHL
   :args: #2
   :hint: "Bitwise shift left of integer."
-  :table: { { I*.bshl Types.Integer Types.Integer } } }
+  :table: { { bshl Types.Integer Types.Integer } } }
 I*.stobin
 
 (Bitwise shift right)
 { :name: BSHR
   :args: #2
   :hint: "Bitwise shift right of integer."
-  :table: { { I*.bshr Types.Integer Types.Integer } } }
+  :table: { { bshr Types.Integer Types.Integer } } }
 I*.stobin
 
 (Bitwise AND)
 { :name: BAND
   :args: #2
   :hint: "Bitwise AND of integers."
-  :table: { { I*.band Types.Integer Types.Integer } } }
+  :table: { { band Types.Integer Types.Integer } } }
 I*.stobin
 
 (Bitwise OR)
 { :name: BOR
   :args: #2
   :hint: "Bitwise OR of integers."
-  :table: { { I*.bor Types.Integer Types.Integer } } }
+  :table: { { bor Types.Integer Types.Integer } } }
 I*.stobin
 
 (Bitwise XOR)
 { :name: BXOR
   :args: #2
   :hint: "Bitwise XOR of integers."
-  :table: { { I*.bxor Types.Integer Types.Integer } } }
+  :table: { { bxor Types.Integer Types.Integer } } }
 I*.stobin
 
 
@@ -485,7 +485,7 @@ I*.stobin
   :hint: "Build a new built-in from a hint string, symbol name, an argument count, and a dispatch table in the form of:
   { { code objtype1 objtype2 ... } ... }"
   :table:
-  { { `:: I*.>bin I*.setbintable ;
+  { { :: >bin setbintable ;
       Types.List Types.Integer Types.String Types.Symbol } } }
 I*.stobin
 
@@ -494,7 +494,7 @@ I*.stobin
   :args: #2
   :hint: "Hook new dispatch lines into an extant builtin, in the same fashion as >BIN."
   :table:
-  { { :: `I*.binhook `I*.drop ; Types.List Types.Builtin } } }
+  { { :: binhook drop ; Types.List Types.Builtin } } }
 I*.stobin)
 
 (Make a tag)
@@ -502,14 +502,14 @@ I*.stobin)
   :args: #2
   :hint: "Prepare a new tag object from any object and a non-dotted symbol."
   :table:
-  { { I*.>tag Types.Any Types.Symbol } } }
+  { { >tag Types.Any Types.Symbol } } }
 I*.stobin
 
 (Make directory)
 { :name: MKDIR
   :args: #0
   :hint: "Create a new empty directory."
-  :table: { { I*.mkdir } } }
+  :table: { { mkdir } } }
 I*.stobin
 
 (Coerce to integer)
@@ -517,8 +517,8 @@ I*.stobin
   :args: #1
   :hint: "Make a number or string an integer."
   :table:
-  { { I*.num>int Types.Float }
-    { I*.str>int Types.String }
+  { { num>int Types.Float }
+    { str>int Types.String }
     { (Fageddaboudit) Types.Integer } } }
 I*.stobin
 
@@ -527,8 +527,8 @@ I*.stobin
   :args: #1
   :hint: "Make a number or string a float."
   :table:
-  { { I*.num>float   Types.Integer }
-    { I*.str>float   Types.String }
+  { { num>float   Types.Integer }
+    { str>float   Types.String }
     { (Fageddaboudit) Types.Float } } }
 I*.stobin
 
@@ -536,25 +536,25 @@ I*.stobin
 { :name: >STR
   :args: #1
   :hint: "Nearest string representation of an object."
-  `:table: 
+  :table: 
     { 
-      { I*.num>str Types.Float } 
-      { I*.num>str Types.Integer } 
+      { num>str Types.Float } 
+      { num>str Types.Integer } 
       { ~() Types.String }
-      { I*.str>str Types.Comment }
-      { :: I*.eval I*.lastcall ; Types.Quote }
-      { I*.sym>str Types.Symbol }
-      { :: I*.len "{ … }" "{ }" I*.ifte ;
+      { str>str Types.Comment }
+      { :: eval lastcall ; Types.Quote }
+      { sym>str Types.Symbol }
+      { :: len "{ … }" "{ }" ifte ;
         Types.List }
-      { :: I*.len ":: … ;" ":: ;" I*.ifte ;
+      { :: len ":: … ;" ":: ;" ifte ;
         Types.Code }
-      { :: I*.bin> #4 I*.rolld #3 I*.dropn I*.sym>str ;
+      { :: bin> #4 rolld #3 dropn sym>str ;
         Types.Builtin }
-      { :: I*.tag> ": " I*.+str ":" I*.swap I*.+str
-           I*.swap I*.lastcall I*.+str ;
+      { :: tag> ": " +str ":" swap +str
+           swap lastcall +str ;
         Types.Tag }
-      { :: I*.type Types.n I*.swap I*.get " object)" I*.+str 
-          "(" I*.swap I*.+str ; 
+      { :: type Types.n swap get " object)" +str 
+          "(" swap +str ; 
         Types.Any } } }
 I*.stobin
 
@@ -562,35 +562,35 @@ I*.stobin
 { :name: VAL
   :args: #1
   :hint: "Like BASIC, turn a string into a float, 0 if 0, 0 also if error."
-  :table: { { I*.basicval Types.String } } }
+  :table: { { basicval Types.String } } }
 I*.stobin
 
 (Character to integer)
 { :name: ASC>
   :args: #1
   :hint: "Retreive the character number of the first character in a string."
-  :table: { { I*.asc> Types.String } } }
+  :table: { { asc> Types.String } } }
 I*.stobin
 
 (Integer to character)
 { :name: >ASC
   :args: #1
   :hint: "Return a character from an integer value."
-  :table: { { I*.>asc Types.Integer } } }
+  :table: { { >asc Types.Integer } } }
 I*.stobin
 
 (Anything to quote)
 { :name: QUOTE
   :args: #1
   :hint: "Quote an object."
-  :table: { { I*.>quote Types.Any } } }
+  :table: { { >quote Types.Any } } }
 I*.stobin
 
 (String to objects)
 { :name: PARSE
   :args: #1
   :hint: "Parse a string into an RPL object."
-  :table: { { I*.parse Types.String } } }
+  :table: { { parse Types.String } } }
 I*.stobin
 
 (To symbol)
@@ -598,7 +598,7 @@ I*.stobin
   :args: #1
   :hint: "Turn a string into a symbol."
   :table:
-  { { I*.str>sym Types.String } } }
+  { { str>sym Types.String } } }
 I*.stobin
 
 
@@ -608,28 +608,28 @@ I*.stobin
 { :name: ==
   :args: #2
   :hint: "Test two objects for equality."
-  :table: { { I*.== Types.Any Types.Any } } }
+  :table: { { == Types.Any Types.Any } } }
 I*.stobin
 
 (Inequality)
 { :name: !=
   :args: #2
   :hint: "Test two objects for inequality."
-  :table: { { I*.!= Types.Any Types.Any } } }
+  :table: { { != Types.Any Types.Any } } }
 I*.stobin
 
 (Reference check)
 { :name: SAME
   :args: #2
   :hint: "Test two objects for physical sameness."
-  :table: { { I*.==ref Types.Any Types.Any } } }
+  :table: { { ==ref Types.Any Types.Any } } }
 I*.stobin
 
 (Reference check)
 { :name: !SAME
   :args: #2
   :hint: "Test two objects for physical difference."
-  :table: { { I*.!=ref Types.Any Types.Any } } }
+  :table: { { !=ref Types.Any Types.Any } } }
 I*.stobin
 
 (Less than)
@@ -637,11 +637,11 @@ I*.stobin
   :args: #2
   :hint: "Compare two numbers, or two strings."
   :table:
-  { { I*.< Types.Integer Types.Integer }
-    { I*.< Types.Float   Types.Float }
-    { I*.< Types.Integer Types.Float }
-    { I*.< Types.Float   Types.Integer }
-    { I*.< Types.String  Types.String } } }
+  { { < Types.Integer Types.Integer }
+    { < Types.Float   Types.Float }
+    { < Types.Integer Types.Float }
+    { < Types.Float   Types.Integer }
+    { < Types.String  Types.String } } }
 I*.stobin
 
 (Less than or equal to)
@@ -649,11 +649,11 @@ I*.stobin
   :args: #2
   :hint: "Compare two numbers, or two strings."
   :table:
-  { { I*.<= Types.Integer Types.Integer }
-    { I*.<= Types.Float   Types.Float }
-    { I*.<= Types.Integer Types.Float }
-    { I*.<= Types.Float   Types.Integer } 
-    { I*.<= Types.String  Types.String } } }
+  { { <= Types.Integer Types.Integer }
+    { <= Types.Float   Types.Float }
+    { <= Types.Integer Types.Float }
+    { <= Types.Float   Types.Integer } 
+    { <= Types.String  Types.String } } }
 I*.stobin
 
 (Greater than)
@@ -661,11 +661,11 @@ I*.stobin
   :args: #2
   :hint: "Compare two numbers, or two strings."
   :table:
-  { { I*.> Types.Integer Types.Integer }
-    { I*.> Types.Float   Types.Float }
-    { I*.> Types.Integer Types.Float }
-    { I*.> Types.Float   Types.Integer } 
-    { I*.> Types.String  Types.String }} }
+  { { > Types.Integer Types.Integer }
+    { > Types.Float   Types.Float }
+    { > Types.Integer Types.Float }
+    { > Types.Float   Types.Integer } 
+    { > Types.String  Types.String }} }
 I*.stobin
 
 (Greater than or equal to)
@@ -673,11 +673,11 @@ I*.stobin
   :args: #2
   :hint: "Compare two numbers, or two strings."
   :table:
-  { { I*.>= Types.Integer Types.Integer }
-    { I*.>= Types.Float   Types.Float }
-    { I*.>= Types.Integer Types.Float }
-    { I*.>= Types.Float   Types.Integer } 
-    { I*.>= Types.String  Types.String } } }
+  { { >= Types.Integer Types.Integer }
+    { >= Types.Float   Types.Float }
+    { >= Types.Integer Types.Float }
+    { >= Types.Float   Types.Integer } 
+    { >= Types.String  Types.String } } }
 I*.stobin
 
 (AND)
@@ -685,10 +685,10 @@ I*.stobin
   :args: #2
   :hint: "Compare two numbers."
   :table:
-  { { I*.and Types.Integer Types.Integer }
-    { I*.and Types.Float   Types.Float }
-    { I*.and Types.Integer Types.Float }
-    { I*.and Types.Float   Types.Integer } } }
+  { { and Types.Integer Types.Integer }
+    { and Types.Float   Types.Float }
+    { and Types.Integer Types.Float }
+    { and Types.Float   Types.Integer } } }
 I*.stobin
 
 (OR)
@@ -696,10 +696,10 @@ I*.stobin
   :args: #2
   :hint: "Compare two numbers."
   :table:
-  { { I*.or Types.Integer Types.Integer }
-    { I*.or Types.Float   Types.Float }
-    { I*.or Types.Integer Types.Float }
-    { I*.or Types.Float   Types.Integer } } }
+  { { or Types.Integer Types.Integer }
+    { or Types.Float   Types.Float }
+    { or Types.Integer Types.Float }
+    { or Types.Float   Types.Integer } } }
 I*.stobin
 
 (NOT)
@@ -707,8 +707,8 @@ I*.stobin
   :args: #1
   :hint: "Boolean NOT: return #0 if object is true, or #1 if it is false."
   :table:
-  { { I*.not Types.Integer }
-    { I*.not Types.Float } } }
+  { { not Types.Integer }
+    { not Types.Float } } }
 I*.stobin
 
 
@@ -718,10 +718,10 @@ I*.stobin
   :args: #1
   :hint: "Return the length of a compound object or string, or the depth of a symbol."
   :table:
-  { { I*.len Types.List }
-    { I*.len Types.String }
-    { I*.lencode Types.Code } 
-    { I*.len Types.Symbol } } }
+  { { len Types.List }
+    { len Types.String }
+    { lencode Types.Code } 
+    { len Types.Symbol } } }
 I*.stobin
 
 (Pop)
@@ -729,8 +729,8 @@ I*.stobin
   :args: #1
   :hint: "Pop the last item off a list."
   :table:
-  { { I*.pop Types.List }
-    { I*.pop Types.Code } } }
+  { { pop Types.List }
+    { pop Types.Code } } }
 I*.stobin
 
 (Obj>)
@@ -738,11 +738,11 @@ I*.stobin
   :args: #1
   :hint: "Break up a composite object and return the object count in stack level 1.  Or return the contents of a tag or builtin."
   :table:
-  { { I*.composite> Types.List }
-    { I*.composite> Types.Code }
-    { I*.tag>	    Types.Tag }
-    { I*.context>   Types.Context }
-    { I*.bin>       Types.Builtin } } }
+  { { composite> Types.List }
+    { composite> Types.Code }
+    { tag>	    Types.Tag }
+    { context>   Types.Context }
+    { bin>       Types.Builtin } } }
 I*.stobin
 
 (Subset from left)
@@ -750,9 +750,9 @@ I*.stobin
   :args: #2
   :hint: "Fetch a subset of a string, list, or program."
   :table:
-  { { I*.left Types.String Types.Integer }
-    { I*.left Types.List   Types.Integer }
-    { I*.left Types.Code   Types.Integer } } }
+  { { left Types.String Types.Integer }
+    { left Types.List   Types.Integer }
+    { left Types.Code   Types.Integer } } }
 I*.stobin
 
 (Subset from right)
@@ -760,9 +760,9 @@ I*.stobin
   :args: #2
   :hint: "Fetch a subset of a string, list, or program."
   :table:
-  { { I*.right Types.String Types.Integer }
-    { I*.right Types.List   Types.Integer }
-    { I*.right Types.Code   Types.Integer } } }
+  { { right Types.String Types.Integer }
+    { right Types.List   Types.Integer }
+    { right Types.Code   Types.Integer } } }
 I*.stobin
 
 (Subset from middle)
@@ -770,9 +770,9 @@ I*.stobin
   :args: #3
   :hint: "Fetch a subset of a string, list, or program."
   :table:
-  { { I*.subs Types.String Types.Integer Types.Integer }
-    { I*.subs Types.List   Types.Integer Types.Integer }
-    { I*.subs Types.Code   Types.Integer Types.Integer } } }
+  { { subs Types.String Types.Integer Types.Integer }
+    { subs Types.List   Types.Integer Types.Integer }
+    { subs Types.Code   Types.Integer Types.Integer } } }
 I*.stobin
 
 (Get from list and evaluate)
@@ -780,8 +780,8 @@ I*.stobin
   :args: #2
   :hint: "Fetch an object from a list or code and evaluate it."
   :table:
-  { { I*.gete Types.List Types.Integer }
-    { I*.gete Types.Code Types.Integer } } }
+  { { gete Types.List Types.Integer }
+    { gete Types.Code Types.Integer } } }
 I*.stobin
 
 (Get from composite)
@@ -789,9 +789,9 @@ I*.stobin
   :args: #2
   :hint: "Fetch a character from a string or an object from a list or code."
   :table:
-  { { I*.get Types.List   Types.Integer }
-    { I*.get Types.String Types.Integer }
-    { I*.get Types.Code   Types.Integer } } }
+  { { get Types.List   Types.Integer }
+    { get Types.String Types.Integer }
+    { get Types.Code   Types.Integer } } }
 I*.stobin
 
 (Put to composite)
@@ -799,8 +799,8 @@ I*.stobin
   :args: #3
   :hint: "Store an object into a list or code."
   :table:
-  { { I*.put Types.List Types.Any Types.Integer }
-    { I*.put Types.Code Types.Any Types.Integer } } }
+  { { put Types.List Types.Any Types.Integer }
+    { put Types.Code Types.Any Types.Integer } } }
 I*.stobin
 
 (Make list)
@@ -808,8 +808,8 @@ I*.stobin
   :args: #1
   :hint: "Combine x objects into a list, or convert code to a list."
   :table:
-  { { I*.>lst     Types.Integer }
-    { I*.code>lst Types.Code }
+  { { >lst     Types.Integer }
+    { code>lst Types.Code }
     { (Nothin')   Types.List } } }
 I*.stobin
 
@@ -818,8 +818,8 @@ I*.stobin
   :args: #1
   :hint: "Combine x objects into code, or convert a list to code."
   :table:
-  { { I*.>code    Types.Integer }
-    { I*.lst>code Types.List }
+  { { >code    Types.Integer }
+    { lst>code Types.List }
     { (Nothin')   Types.Code } } }
 I*.stobin
 
@@ -829,6 +829,6 @@ I*.stobin
 { :name: DED
   :hint: "Invoke error handler with level 1 as its message."
   :args: #1
-  :table: { { I*.ded Types.String } } }
+  :table: { { ded Types.String } } }
 I*.stobin
 

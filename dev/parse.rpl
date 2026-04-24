@@ -46,7 +46,7 @@
     ':: DUP nulltoken SAME ':: DROP pærseded ; IFT ;
     'pærseded
     IFTE ;
-   { :nocomment: #1 } Pærse.default.environment ;
+   { :nocomment: #0 } Pærse.default.environment ;
 'pærse STO
 
 (Pærse and evaluate.)
@@ -485,12 +485,12 @@
   text cursor GET ":" ==
   ':: 
     cursor #1 + 'cursor STO
-    `(Get the string enclosed by :. If it's empty, it was probably a ::.)
+    (Get the string enclosed by :. If it's empty, it was probably a ::.)
     ":" getstring DUP LEN 
     ':: >SYM
       cursor #1 + 'cursor STO skip
       next SWAP >TAG ;
-    `(Back cursor off if we aren't doing anything.)
+    (Back cursor off if we aren't doing anything.)
     ':: DROP cursor #1 - 'cursor STO ;
     IFTE ;
   IFT ;
