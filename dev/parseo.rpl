@@ -637,3 +637,11 @@ IFT
 
 (Enable compilation of sysrpl.)
 i** 'Parse.symbols STO
+
+':: "dev/parse.rpl" pdisk EVAL ;
+'rlæ STO
+':: "dev/boot.rpl" pædisk EVAL ;
+'boot STO
+
+(Other shit)
+"" "dev/" 'BASDIR STO 

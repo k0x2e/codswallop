@@ -13,7 +13,9 @@
   ':: 
     table args hint 'name rcl >bin I*.setbintable 'name rcl 
     dup sym>str disp
-    sto ;
+    (Record to both the main store and Parse.symbols.bin.)
+    dup2 
+    'Pærse.symbols.bin swap +sym dup sym>str disp sto sto ;
   swap local ;
 'I*.stobin sto
 

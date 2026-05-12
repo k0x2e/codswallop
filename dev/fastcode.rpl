@@ -10,7 +10,7 @@
 { :name: DROP!
   :args: #0
   :hint: "Drop everything from the stack."
-  :table: { { `:: I*.stack I*.len I*.dropn ; } } }
+  :table: { { :: stack len dropn ; } } }
 I*.stobin
 
 
@@ -21,10 +21,10 @@ I*.stobin
   :args: #1
   :hint: "Repeatedly evaluate a code object until it returns 0." 
   :table:
-  { { `:: 
-        ':: ~'_rep IFT ; 
-        I*.catcode I*.dup 
-        { ~_rep } I*.local ; Types.Code } } }
+  { { :: 
+        ':: '_rep bin.IFT ; 
+        catcode dup 
+        { _rep } local ; Types.Code } } }
 I*.stobin
 
 
@@ -33,52 +33,52 @@ I*.stobin
   :args: #2
   :hint: "Recall an object if it exists, otherwise return a default value."
   :table:
-  { { `::
-        I*.swap I*.dup I*.exists
-        ':: I*.rcl I*.swap ; I*.ift I*.drop ;
+  { { ::
+        swap dup exists
+        ':: rcl swap ; ift drop ;
        Types.Symbol Types.Any } } }
 I*.stobin
 
 
 (HAS: See if a value exists in a list.  This doesn't evaluate any
  user code, so it was safe to implement with internals for a smidge
- of extra speed.)
-`':: 
-  I*.>quote
-  I*.swap I*.dup I*.>quote I*.swap I*.len
-  ':: ~idx ~length I*.<
-    ':: ~list ~idx I*.get ~term I*.==
+ of extra speed.  Is now taken from parser.)
+(':: 
+  >quote
+  swap dup >quote swap len
+  ':: idx length <
+    ':: list idx get term ==
       #1
-      ':: ~idx #1 I*.+int ~'idx I*.sto ~loop ;
-      I*.ifte ;
+      ':: idx #1 +int 'idx sto loop ;
+      ifte ;
     #0 
-    I*.ifte ; 
-  I*.dup ~{ loop length list term :idx: #0 } I*.local ;
-'I*.has STO
+    ifte ; 
+  dup { loop length list term :idx: #0 } local ;
+'has STO)
 
 { :name: HAS
   :args: #2
   :hint: "Check to see if a list on line 2 contains something like the item on line 1."
-  :table: { { I*.has Types.List Types.Any } } }
+  :table: { { has Types.List Types.Any } } }
 I*.stobin
 
 
 (READF: Read an entire file split into lines.)
-':: "r" `I*.fopen
+':: "r" fopen
   '::
     { }
-    file `I*.feof `I*.not
+    file feof not
     ':: 
-      file `I*.freadline `I*.+list file `I*.feof 
-      `I*.self `I*.swap '`I*.drop '`I*.eval `I*.ifte ;
-    `I*.ift file `I*.fclose ; 
-  { file } `I*.local ;
-'I*.readf STO
+      file freadline +list file feof 
+      self swap 'drop 'eval ifte ;
+    ift file fclose ; 
+  { file } local ;
+'readf STO
 
 { :name: READF
   :args: #1
   :hint: "Read an entire file and return it as a list of strings, one per line."
-  :table: { { I*.readf Types.String } } }
+  :table: { { readf Types.String } } }
 I*.stobin
 
 
@@ -89,31 +89,31 @@ I*.stobin
   :hint: "Un-parse an object back into a string, more or less."
   `:table: 
     { 
-      { I*.num>str 
+      { num>str 
         Types.Float } 
-      { :: I*.num>str "#" I*.swap I*.+str ;
+      { :: num>str "#" swap +str ;
         Types.Integer } 
-      { :: "\"" I*.+str "\"" I*.swap I*.+str ;
+      { :: "\"" +str "\"" swap +str ;
         Types.String }
-      { :: ")" I*.+str "(" I*.swap I*.+str ;
+      { :: ")" +str "(" swap +str ;
         Types.Comment }
-      { :: I*.eval I*.lastcall "'" I*.swap I*.+str ;
+      { :: eval lastcall "'" swap +str ;
         Types.Quote }
-      { I*.sym>str
+      { sym>str
         Types.Symbol }
-      { :: I*.len "{ … }" "{ }" I*.ifte ;
+      { :: len "{ … }" "{ }" ifte ;
         Types.List }
-      { :: I*.len ":: … ;" ":: ;" I*.ifte ;
+      { :: len ":: … ;" ":: ;" ifte ;
         Types.Code }
-      { :: I*.bin> #4 I*.rolld #3 I*.dropn ;
+      { :: bin> #4 rolld #3 dropn ;
         Types.Builtin }
-      { :: I*.tag> ": " I*.+str ":" I*.swap I*.+str
-           I*.swap I*.lastcall I*.+str ;
+      { :: tag> ": " +str ":" swap +str
+           swap lastcall +str ;
         Types.Tag }
-      { I*.romid
+      { romid
         Types.Internal }
-      { :: I*.type Types.n I*.swap I*.get " object)" I*.+str 
-          "(" I*.swap I*.+str ; 
+      { :: type Types.n swap get " object)" +str 
+          "(" swap +str ; 
         Types.Any } } }
 I*.stobin
 
@@ -121,23 +121,23 @@ I*.stobin
 { :name: DISP
   :args: #1
   :hint: "Print any object in human-readable form to the screen."
-  :table: { { I*.disp Types.String } 
-            { `:: >STR I*.disp ; Types.Any } } }
+  :table: { { disp Types.String } 
+            { :: bin.>STR disp ; Types.Any } } }
 I*.stobin
 
 (Display with no newline.)
 { :name: DISPN
   :args: #1
   :hint: "DISP without newline."
-  :table: { { I*.dispn Types.String } 
-            { `:: >STR I*.disp ; Types.Any } } }
+  :table: { { dispn Types.String } 
+            { :: bin.>STR dispn ; Types.Any } } }
 I*.stobin
 
 (String concatenation stuff dependent upon >STR.  For the moment this
  is hardcoded, but eventually dispatch tables will be possible to merge.)
-`'+ I*.bin> #4 I*.pick
-`{ :: I*.swap >STR I*.swap I*.+str ; Types.Any Types.String }
-#9 I*.put
-`{ :: >STR I*.+str ; Types.String Types.Any }
-#7 I*.put
-`'+ I*.swap I*.setdispatch #4 I*.dropn
+'bin.+ bin> #4 pick
+{ :: swap bin.>STR swap +str ; Types.Any Types.String }
+#9 put
+{ :: bin.>STR +str ; Types.String Types.Any }
+#7 put
+'bin.+ swap I*.setdispatch #4 dropn

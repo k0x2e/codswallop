@@ -16,11 +16,10 @@
 "
     :maxdigits: #15 
     :margin: #78 
-    :symdir: builtins 
-    :nocomment: #0 ]
+    :sysmode: #1 ]
   :common: [dir: ]
   :type: [dir: ]
-  :symbols: [dir: ] ]
+  :symbols: `() ]
 'Pærse STO
 
 (List of parse routines, generally one per type, in order of precedence.)
@@ -43,25 +42,25 @@
 ':: 
   ':: 
     skip next valid
-    ':: DUP nulltoken SAME ':: DROP pærseded ; IFT ;
+    ':: dup nulltoken ==ref ':: drop pærseded ; ift ;
     'pærseded
-    IFTE ;
-   { :nocomment: #0 } Pærse.default.environment ;
+    ifte ;
+   { } Pærse.default.environment ;
 'pærse STO
 
 (Pærse and evaluate.)
 ':: 
-  '::
+  ':: 
+    skip next valid
     ':: 
-      skip next valid
-      ':: 
-        DUP nulltoken SAME 'DROP 
-        'EVAL IFTE ;
-      'pærseded
-      IFTE
-      stop NOT ;
-    REP ;
-  { :nocomment: #1 } Pærse.default.environment ;
+      dup nulltoken ==ref 'drop
+      ':: sysmode 'eval ':: DUP DISP EVAL ; ifte 
+        ; ifte ;
+    'pærseded
+    ifte
+    stop not 
+    'rst ift ;
+  { } Pærse.default.environment ;
 'pæval STO
 
 (Report a parse error.)
@@ -118,6 +117,7 @@
     :valid: #0
     :stop: #0
     :altmode: #0
+    :sysmode: Pærse.default.sysmode
     :error: "There is nothing here" 
     :onechar: Pærse.common.onechar
     :next: Pærse.common.next
@@ -132,11 +132,10 @@
     :spaces: Pærse.default.spaces
     :reserved: Pærse.default.reserved 
     :parsers: Pærse.default.parsers
-    :nocomment: Pærse.default.nocomment
     :nulltoken: "(null)" }
-  SWAP + 
-  #3 PICK LEN #4 ROLLD
-  LOCAL ;
+  swap +lst 
+  #3 pick len #4 rolld
+  local ;
 'Pærse.default.environment STO
 
 (Skip cursor past whitespace and set the stop flag if we're at the end.)
@@ -482,18 +481,18 @@
 
 (Tag, janky janky right now fix it pls)
 '::
-  text cursor GET ":" ==
+  text cursor get ":" ==
   ':: 
-    cursor #1 + 'cursor STO
+    cursor #1 +int 'cursor sto
     (Get the string enclosed by :. If it's empty, it was probably a ::.)
-    ":" getstring DUP LEN 
+    ":" getstring dup len
     ':: >SYM
-      cursor #1 + 'cursor STO skip
-      next SWAP >TAG ;
+      cursor #1 +int 'cursor sto skip
+      next swap >TAG ;
     (Back cursor off if we aren't doing anything.)
-    ':: DROP cursor #1 - 'cursor STO ;
-    IFTE ;
-  IFT ;
+    ':: drop cursor #1 -int 'cursor sto ;
+    ifte ;
+  ift ;
 'Pærse.type.Tag STO
 
 (String)
@@ -556,7 +555,8 @@
       (And pick between a real object and the null token according to alt
        mode.  The null token is shunned in several places.)
       ':: text start #1 +int cursor #2 -int subs str>rem
-        altmode nocomment or ':: drop nulltoken ; ift
+        (Altmode + sysmode keeps comments, reverse of normal.)
+        altmode sysmode != ':: drop nulltoken ; ift
         cursor mkvalid ;
       ifte ; 
     { :depth: #1 } local ;
@@ -605,14 +605,19 @@
       'rst ift ;
     stop not
     '::
-      (Logic here: alt always recalls, postsym derefs from its own
-       directory or passes raw symbol otherwise.)
+      (Logic here: alt+sys returns raw symbol, alt recalls symbol.
+       otherwise sys returns postsym, none returns raw symbol.)
       count >sym altmode
-      ':: dup exists
-        ':: rcl cursor mkvalid ;
-        ':: drop "This symbol must exist at parse time" start mkinvalid ;
-        ifte ;
-      ':: postsym cursor mkvalid ; 
+      '::
+        sysmode
+        ':: cursor mkvalid ;
+        '::
+          dup exists
+          ':: rcl cursor mkvalid ;
+          ':: drop "This symbol must exist at parse time" start mkinvalid ;
+          ifte ;
+        ifte ;          
+      ':: sysmode 'postsym ift cursor mkvalid ; 
       ifte ;
     ift ;
   { :count: #0 } local ;
@@ -637,10 +642,8 @@
   i** DIR ':: DUP 'i** SWAP + RCL SWAP 'I* SWAP + STO ; FOREACH DROP)
   i** CP 'I* STO
   ':: "read" FOPEN #0 READ 
-    " ;" + ":: " SWAP + pærse ; 'pædisk STO 
-  ':: "read" FOPEN #0 READ peval ; 'I*.dsk> STO ;
+    (" ;" + ":: " SWAP +) pæval ; 'pædisk STO ;
 IFT
-  Pærse STATICN 'Pærse STO 
 
 (Enable compilation of sysrpl.)
 i** 'Pærse.symbols STO
@@ -659,3 +662,5 @@ i** 'Pærse.symbols STO
       dup { loop length list term :idx: #0 } local ;
 'Pærse.symbols.has STO
 
+MKDIR 'Pærse.symbols.bin STO
+Types 'Pærse.symbols.Types STO

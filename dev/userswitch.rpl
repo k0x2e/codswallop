@@ -1,0 +1,6 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Usermode parser switch )
+
+(Everything from this file onward will use the usermode parser.)
+#0 'Pærse.default.sysmode STO

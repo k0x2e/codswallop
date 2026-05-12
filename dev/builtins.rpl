@@ -485,7 +485,7 @@ I*.stobin
   :hint: "Build a new built-in from a hint string, symbol name, an argument count, and a dispatch table in the form of:
   { { code objtype1 objtype2 ... } ... }"
   :table:
-  { { :: >bin setbintable ;
+  { { :: >bin I*.setbintable ;
       Types.List Types.Integer Types.String Types.Symbol } } }
 I*.stobin
 
@@ -519,7 +519,7 @@ I*.stobin
   :table:
   { { num>int Types.Float }
     { str>int Types.String }
-    { (Fageddaboudit) Types.Integer } } }
+    { `(Fageddaboudit) Types.Integer } } }
 I*.stobin
 
 (Coerce to float)
@@ -529,7 +529,7 @@ I*.stobin
   :table:
   { { num>float   Types.Integer }
     { str>float   Types.String }
-    { (Fageddaboudit) Types.Float } } }
+    { `(Fageddaboudit) Types.Float } } }
 I*.stobin
 
 (Coerce to string)
@@ -540,7 +540,7 @@ I*.stobin
     { 
       { num>str Types.Float } 
       { num>str Types.Integer } 
-      { ~() Types.String }
+      { `() Types.String }
       { str>str Types.Comment }
       { :: eval lastcall ; Types.Quote }
       { sym>str Types.Symbol }
@@ -605,14 +605,14 @@ I*.stobin
 ( ### Comparisons )
 
 (Equality)
-{ :name: ==
+{ :name: `==
   :args: #2
   :hint: "Test two objects for equality."
   :table: { { == Types.Any Types.Any } } }
 I*.stobin
 
 (Inequality)
-{ :name: !=
+{ :name: `!=
   :args: #2
   :hint: "Test two objects for inequality."
   :table: { { != Types.Any Types.Any } } }
@@ -633,7 +633,7 @@ I*.stobin
 I*.stobin
 
 (Less than)
-{ :name: <
+{ :name: `<
   :args: #2
   :hint: "Compare two numbers, or two strings."
   :table:
@@ -645,7 +645,7 @@ I*.stobin
 I*.stobin
 
 (Less than or equal to)
-{ :name: <=
+{ :name: `<=
   :args: #2
   :hint: "Compare two numbers, or two strings."
   :table:
@@ -657,7 +657,7 @@ I*.stobin
 I*.stobin
 
 (Greater than)
-{ :name: >
+{ :name: `>
   :args: #2
   :hint: "Compare two numbers, or two strings."
   :table:
@@ -669,7 +669,7 @@ I*.stobin
 I*.stobin
 
 (Greater than or equal to)
-{ :name: >=
+{ :name: `>=
   :args: #2
   :hint: "Compare two numbers, or two strings."
   :table:
@@ -810,7 +810,7 @@ I*.stobin
   :table:
   { { >lst     Types.Integer }
     { code>lst Types.Code }
-    { (Nothin')   Types.List } } }
+    { `(Nothin')   Types.List } } }
 I*.stobin
 
 (Make code)
@@ -820,7 +820,7 @@ I*.stobin
   :table:
   { { >code    Types.Integer }
     { lst>code Types.List }
-    { (Nothin')   Types.Code } } }
+    { `(Nothin')   Types.Code } } }
 I*.stobin
 
 

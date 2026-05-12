@@ -691,7 +691,7 @@ class typebin(objarchetype):
         # Suggest the runtime call the first matching dispatch.
         if match: 
           return self.dispatches[i].eval
-          
+      print(self.argck)
       return runtime.ded('There are '+str(len(self.argck))+' ways to call and you tried #'+\
       str(len(self.argck)+1))
   

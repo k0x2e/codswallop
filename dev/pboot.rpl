@@ -1,0 +1,9 @@
+( CODSWALLOP RPL, a zen garden
+  #####################################################
+  Parser boot )
+
+(System storage, meant to be a common area embedded in system utilities
+ like parse.)
+[dir: ] 'i**.s STO
+
+BASDIR "parse.rpl" + DSK>
