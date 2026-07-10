@@ -18,8 +18,7 @@ from .rtypes import typeint, typefloat, typebin, typestr, typelst
 from .rtypes import typecode, typequote, typebinproc, typecontext, typedir
 from .rtypes import typetag, typesym, typeio, symtostr, typerem
 from .rom import evalrom
-from .parse import parse, validatename
-#import pysys.rtypes, pysys.parse, pysys.rom
+from .parse import validatename
 
 import time, random, copy
 
@@ -374,22 +373,6 @@ def makebinprocs():
   bins += [['require', x]]
   
   ### Disk store
-
-  # Parse an entire file as a code object.
-  def x(rt):
-    name = rt.Stack.pop()
-    try:
-      with open(name.data, 'r') as file:
-        text = ':: '+file.read(MAXREAD)+' ;'
-    except:
-      rt.Stack.push(name)
-      return rt.ded('The operating system says no')
-    obj = parse(rt, text)
-    if obj is None:
-      return rt.ded('The parser did not care for your shenanigans')
-    return obj.eval
-  bins += [['dsk>', x]]
-  
 
   ### Named storage
   # Recall symbol.
@@ -1099,19 +1082,7 @@ def makebinprocs():
     return rt.Context.eval
   bins += [['>asc', x]]
   
-  # String to objects.
-  def x(rt):
-    text = rt.Stack.pop()
-    x = parse(rt, text.data)
-    if x is None:
-      rt.Stack.push(text)
-      return rt.ded('This is no RPL that I can see')
-    else:
-      rt.Stack.push(x)
-      return rt.Context.eval
-  bins += [['parse', x]]
-  
-  # To symbol.
+  # To symbol.  Probably due to be rpl'd.
   def x(rt):
     ourstring = rt.Stack.pop()
     ourname = validatename(ourstring.data)

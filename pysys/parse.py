@@ -98,32 +98,6 @@ def getstring(text, cursor, delimiter):
       cursor += 1
   return newstring, cursor
 
-# Build a list within a composite type.
-def parsecomposite(token, obj, delta, delimiter):
-  # Hang onto our starting cursor and alt setting.
-  cursor = token.cursor
-  alternate = token.alternate
-  
-  # Advance cursor to the meat and/or potatoes.
-  token.cursor += delta
-  token.whiteskip()
-  
-  # Initially declare our token valid to cover null strings.
-  token.valid = True
-  while token.valid and not token.stop and \
-        token.text[token.cursor] != delimiter:
-    # Then try to grab a new object.
-    token.alternate = alternate
-    token.nextobj()
-    if token.valid and token.data is not None:
-      # Silently skip a valid None (e.g. an alternate comment.)
-      obj.data += [token.data]
-  
-  # Check to see if we got to the end without stopping for a delimiter.
-  if token.valid and token.stop and len(delimiter):
-    token.invalidate('Consider ending this '+obj.typename+' with a '+delimiter, cursor)
-
-
 # Check to see if text contains any symbolic naughties or null segments, and
 # return a list of names if not.
 def validatename(text):
@@ -137,35 +111,3 @@ def validatename(text):
     else:
       return
   return names
-
-# Squeeze one object out of text.
-def parse(runtime, text):
-  token = parsetoken(runtime, text)
-  token.nextobj()
-  
-  # Did we receive something valid?
-  if token.valid:
-    # Yes.  Print a warning if there was any trailing garbage.
-    if not token.stop:
-      print('Ignoring spurious text:',token.text[token.cursor:])
-    return token.data
-  else:
-    # If invalid, try to show the user roughly where things went sideways.
-    print('\nYour words fail to become actions.\n')
-    # Get our overall line number.
-    linenum = token.text[:token.cursor].count('\n')+1
-    # Look back from the cursor to find our last newline.
-    newlinecursor = 0
-    spotonline = 0
-    for i in range(token.cursor-1, -1, -1):
-      if token.text[i] == '\n':
-        newlinecursor = i+1
-        break
-      else:
-        spotonline += 1
-    # Then just fetch this exact line and show cursor position.
-    print('Stopped on line '+str(linenum)+', position '+str(spotonline+1)+':')
-    print(token.text[newlinecursor:].split('\n')[0])
-    print(' '*spotonline+'↳✞')
-    print('In particular:', token.error)    
-    # And return nothing.

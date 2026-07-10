@@ -15,7 +15,6 @@
 # in-interpreter Types directory up to date.
 
 from .trivia import *
-from .parse import getnumber, getstring, validatename, parsecomposite
 
 import copy
 
@@ -88,12 +87,6 @@ class objarchetype:
   # A hint about its function, for builtins.
   hint = None
 
-  # A string parser, which receives a token, attempts to turn it into an
-  # object, and returns some indication of why it can't, if it can't.
-  # This is a function, not a method.
-  def parse(token):
-    pass
-
   # A constructor to initialize the data payload common to all objects.
   def __init__(self, x=None):
     if x != None:
@@ -151,42 +144,6 @@ class typecontext(objarchetype):
 class typeint(objarchetype):
   typename = 'Integer'
   
-  def parse(token):
-    # Common failure routine.
-    def parseerror():
-      token.invalidate('This integer is barely even an integer at all')
-      
-    # All integers start with a pound sign.
-    cursor = token.cursor   
-    if token.text[cursor] == '#':
-      cursor += 1
-      prefix = ''
-      if cursor >= len(token.text):
-        parseerror()
-        return
-      # Check for optional sign.
-      if token.text[cursor] == '+':
-        cursor += 1
-      elif token.text[cursor] == '-':
-        prefix = '-'
-        cursor += 1
-        
-      # Now rummage for numbers.
-      text, cursor = getnumber(token.text, cursor)
-            
-      # Now try to make whatever we got be a number.  Parsenumber must have
-      # returned something, and that something must have been followed by
-      # whitespace or EOF to be valid.
-      if len(text) and\
-         (cursor == len(token.text) or token.text[cursor] in token.whitespace):
-        try:
-          # If this works, advance the cursor and return our object.
-          token.validnext(typeint(int(prefix+text)), cursor)
-        except:
-          parseerror()
-      else:
-        parseerror()      
-    
   def __init__(self, x):
     self.data = int(x)
 
@@ -194,61 +151,6 @@ class typeint(objarchetype):
 # Float type.
 class typefloat(objarchetype):
   typename = 'Float'
-  
-  def parse(token):
-    # Common failure routine.
-    def parseerror():
-      token.invalidate('This number is not much of a float')
-              
-    # First, check for a sign.
-    cursor = token.cursor
-    text = ''	
-    if token.text[cursor] == '+':
-      cursor += 1
-    elif token.text[cursor] == '-':
-      text += '-'
-      cursor += 1      
-    
-    # Second, try to read an integer or decimal point, but fall through 
-    # error-free otherwise.
-    if cursor < len(token.text) and token.text[cursor] in '.0123456789':
-      # This will be our integer portion, if there is one.
-      value, cursor = getnumber(token.text, cursor)
-      text += value
-                  
-      # If we have a decimal point, add it and whatever integer may follow.
-      if cursor < len(token.text) and token.text[cursor] == '.':
-        cursor += 1
-        value, cursor = getnumber(token.text, cursor)
-        text += '.' + value
-
-      # If there's an exponent, add it and whatever integer may follow also.
-      if cursor+1 < len(token.text) and token.text[cursor] == 'e':
-        cursor += 1
-        text += 'e'
-        if token.text[cursor] == '+':
-          cursor += 1
-        elif token.text[cursor] == '-':
-          text += '-'
-          cursor += 1      
-
-        value, cursor = getnumber(token.text, cursor)
-        # If there's an e but no exponent, fail.
-        if len(value):
-          text += value
-        else:
-          parseerror()
-        
-      # If we're at whitespace or EOF, return an object.  If there's
-      # trailing garbage, raise an error.
-      if cursor >= len(token.text) or token.text[cursor] in token.whitespace:
-        try:
-          # If this works, advance the cursor and return our object.
-          token.validnext(typefloat(float(text)), cursor)
-        except:
-          parseerror()      
-      else:
-        parseerror()
 
   def __init__(self, x):
     self.data = float(x)
@@ -258,17 +160,6 @@ class typefloat(objarchetype):
 class typestr(objarchetype):
   typename = 'String'
 
-  def parse(token):    
-    # All strings begin and end with a quote.
-    cursor = token.cursor
-    if token.text[cursor] == '"':
-      cursor += 1
-      ourtext, cursor = getstring(token.text, cursor, '"')
-      if cursor < len(token.text) and token.text[cursor] == '"':
-        token.validnext(typestr(ourtext), cursor+1)
-      else:
-        token.invalidate("Strings don't just start with quotes")
-        
   def __init__(self, x):
     self.data = str(x)
 
@@ -277,26 +168,6 @@ class typestr(objarchetype):
 # preventing the immediate evaluation of code and symbols.
 class typequote(objarchetype):
   typename = 'Quote'
-  def parse(token):
-    # Quotes start with an apostrophe.
-    if token.text[token.cursor] == "'": 
-      token.cursor += 1
-      token.whiteskip()
-      # Catch quotes not followed by any text.
-      if token.stop:
-        token.invalidate("Quote... what", token.cursor)
-      else:
-        cursor = token.cursor
-        token.nextobj()
-        
-        # Invalidated tokens fall through with whatever error they may have
-        # flagged.  We must also check that no alt-mode comments have 
-        # slipped through, for example.
-        if token.valid:
-          if token.data is None:
-            token.invalidate("You should put something corporeal here", cursor)
-          else:
-            token.validnext(typequote(token.data), token.cursor)
 
   def eval(self, runtime):
     runtime.Stack.push(self.data)
@@ -309,24 +180,6 @@ class typesym(objarchetype):
   typename = 'Symbol'
   def __init__(self, x):
     self.data = x
-  
-  def parse(token):    
-    cursor = token.cursor
-    ourtext, cursor = getstring(token.text, cursor, token.whitespace)
-    ourtext = validatename(ourtext)
-    if ourtext is None:
-      # Reject names with delimiters or names with null segments.
-      token.invalidate("Are you trying to break shit with delimiters in symbol names?")
-    else:
-      # Alternate flag indicates a request to recall the symbol right now.
-      if token.alternate:
-        thing = token.runtime.rcl(ourtext)
-        if thing is None:
-          token.invalidate("This symbol has to exist at parse time")
-        else:
-          token.validnext(thing, cursor)
-      else:
-        token.validnext(typesym(ourtext), cursor)
   
   # Evaluating a symbol attempts to retrieve it by name and evaluate that.
   def eval(self, runtime):
@@ -352,27 +205,6 @@ class typesym(objarchetype):
 class typerem(typestr):
   typename = 'Comment'
 
-  def parse(token):    
-    # Comments begin with ( and end with ).
-    if token.text[token.cursor] == ')':
-      token.invalidate("This looks like a shut and open case")
-    elif token.text[token.cursor] == '(':
-      depth = 1
-      cursor = token.cursor+1
-      # Scan text for matching nested parentheses, so blocks of code can be
-      # easily commented out without escaping all the close parens.
-      while cursor < len(token.text) and depth:
-        depth += (token.text[cursor] == '(') - (token.text[cursor] == ')')
-        cursor += 1
-      # Remaining depth means we ran out of text to scan.
-      if depth:
-        token.invalidate("These remarks have gone on far too long")
-      else:
-        if token.alternate:
-          token.validnext(None, cursor)
-        else:
-          token.validnext(typerem(token.text[token.cursor+1:cursor-1]), cursor)
-  
   def eval(self, runtime):
     return runtime.Context.eval
   
@@ -392,47 +224,6 @@ class typedir(objarchetype):
       self.next = nextobj
     # Here so == can hopefully tell us apart by address.
     self.data = self
-
-  def parse(token):
-    # Just to be a good sport, catch spurious closed brackets too.
-    if token.text[token.cursor] == ']':
-      token.invalidate('Wherever this was supposed to go, it wasn\'t here')
-    elif token.text[token.cursor:token.cursor+5] == '[dir:':
-      # Start digging for tags.
-      alternate = token.alternate
-      oldcursor = token.cursor
-      token.cursor += 5
-      token.whiteskip()
-      firstdir = token.runtime.firstdir()
-      nextdir = firstdir
-      running = True
-      
-      while running:
-        # If we hit the end, that means we're missing a close bracket.
-        if token.stop:
-          token.invalidate('A directory has failed to ]', oldcursor)
-          running = False
-        # If we found a close bracket, we're done here.
-        elif token.text[token.cursor] == ']':
-          running = False
-          token.validnext(firstdir, token.cursor+1)
-        # Otherwise it's tag time.
-        else:
-          # Only try to parse a tag.
-          token.alternate = alternate
-          typetag.parse(token)
-          # We got one, so add it to the chain.
-          if token.valid:
-            token.valid = False
-            nextdir.next = typedir(token.data, nextdir.next)
-            nextdir = nextdir.next
-          # Or tag threw an error, in which case pass it along.  
-          elif token.stop:
-            running = False
-          # Or tag didn't throw an error, in which case it wasn't a tag.
-          else:
-            token.invalidate('Directories can only contain tags')
-            running = False
    
   # Duplicating a directory is trickier, because all entries and tags
   # need to be copied.  This was so hairy I had to take a shower to make it.
@@ -506,60 +297,12 @@ class typetag(objarchetype):
     # And save our type number, because it may have changed.
     newtag.typenum = self.typenum
     return newtag
-    
-  def parse(token):    
-    # Tags will look like :name:thing, so we have to make sure we're
-    # not actually looking at the beginning of a :: code block.
-    cursor = token.cursor
-    if token.text[cursor] == ":":
-      # Increment our cursor and see what we got for a name.
-      cursor += 1
-      ourtext, nextcursor = getstring(token.text, cursor, ":")
-      
-      # If the cursor did not advance, that means we found ::.
-      if nextcursor != cursor:
-        # It's possible a chucklefuck could end a sentence with a colon,
-        # or fail to close the name section.
-        cursor = nextcursor
-        if cursor < len(token.text) and token.text[cursor] == ":":
-          # And it's also possible they didn't give us a valid name.
-          if validatename(ourtext) and not '.' in ourtext:
-            # But if they did, now increment and try to retrieve a valid object.
-            token.cursor = cursor+1
-            token.whiteskip()
-            cursor = token.cursor
-            if token.stop:
-              # A stop here means EOF before we even try for an object.
-              token.invalidate("Half a tag yields none of the goods")
-            else:
-              token.nextobj()            
-              # Invalid tokens fall through with their errors intact.
-              if token.valid:
-                if token.data is None:
-                  token.invalidate("You should put something corporeal here", cursor)
-                else:
-                  token.validnext(typetag(ourtext, token.data), token.cursor)
-          else:
-            token.invalidate("This must be a kind-hearted, pure, and dotless symbol", token.cursor+1)
-        else:
-          token.invalidate("Colon what, dear")
 
 
 # List type.
 class typelst(objarchetype):
   typename = 'List'
 
-  def parse(token):
-    # Just to be a good sport, catch spurious closed brackets too.
-    if token.text[token.cursor] == '}':
-      token.invalidate('Wherever this was supposed to go, it wasn\'t here')
-    elif token.text[token.cursor] == '{':
-      ourlist = typelst([])
-      parsecomposite(token, ourlist, 1, '}')
-      # If parsecomposite wasn't stopped, there was no error or EOF.
-      if not token.stop:
-        token.validnext(ourlist, token.cursor+1)
-  
   def __init__(self, x=None):
     if x:
       self.data = x
@@ -589,20 +332,6 @@ class typelst(objarchetype):
 class typecode(typelst):
   typename = 'Code'
   
-  def parse(token):
-    # Catch semicolons here; if they got this far, they're spurious.
-    if token.text[token.cursor] == ';':
-      token.invalidate('Perhaps this semicolon should be somewhere else')
-    elif token.text[token.cursor:token.cursor+2] == '::':
-      ourcode = typecode([])
-      parsecomposite(token, ourcode, 2, ";")
-      # If parsecomposite wasn't stopped, there was no error or EOF.
-      if not token.stop:
-        # Code lists end with a mandatory internal which drops the current
-        # context, permitting the runtime loop to be a little dumber.
-        ourcode.data += [token.runtime.Return]
-        token.validnext(ourcode, token.cursor+1)
-        
   # Evaluating code pushes it to the call stack rather than the data stack.
   def eval(self, runtime):
     return runtime.newcall(self)
