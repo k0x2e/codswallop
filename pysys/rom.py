@@ -50,7 +50,18 @@ def loadrom(rt):
   
   def nextint():
     return int(advance(' '))
-    
+
+  # Track objects of interest (currently the 'parse' and 'dsk>' internals)
+  # and every other object that references them by index, so we can report
+  # on their usage without treating it as fatal.
+  watchedidx = {}
+  watchedrefs = {}
+
+  def ref(idx):
+    if idx in watchedidx:
+      watchedrefs.setdefault(watchedidx[idx], []).append(i)
+    return store[idx]
+
   # First extract and print the title, if any.
   split = rt.Stack.pop().data.split('[',1)
   if len(split[0]): print(split[0], end='')
@@ -96,58 +107,70 @@ def loadrom(rt):
         if objdata == i:
           store[i] = rt.lastobj
         else:
-          store[i] = typedir(store[nextint()],store[objdata])
+          store[i] = typedir(ref(nextint()),ref(objdata))
       elif objtype == 'Symbol':
         store[i] = typesym(text[cursor:cursor+objdata].split('.'))
         cursor = cursor+objdata+1
       elif objtype == 'Internal':
-        store[i] = rt.rcl([INTERNALSDIR, text[cursor:cursor+objdata]])
+        internalname = text[cursor:cursor+objdata]
+        if internalname in ('parse', 'dsk>'):
+          watchedidx[i] = internalname
+        store[i] = rt.rcl([INTERNALSDIR, internalname])
         cursor = cursor+objdata+1
       elif objtype == 'Quote':
-        store[i] = typequote(store[objdata])
+        store[i] = typequote(ref(objdata))
       elif objtype == 'Tag':
         if objdata == -1:
           store[i] = rt.nulltag
         else:
-          store[i] = typetag(store[objdata].data[0], store[int(advance(' '))])
+          store[i] = typetag(ref(objdata).data[0], ref(int(advance(' '))))
         if store[i].obj is None:
           print(store[i].name)
       elif objtype == 'List':
         store[i] = typelst([None]*objdata)
         for j in range(objdata):
-          store[i].data[j] = store[nextint()]
+          store[i].data[j] = ref(nextint())
       elif objtype == 'Code':
         store[i] = typecode([None]*objdata)
         for j in range(objdata):
-          store[i].data[j] = store[nextint()]    
+          store[i].data[j] = ref(nextint())
         store[i].data.append(rt.Return)
       elif objtype == 'Context':
-        store[i] = typecontext(store[objdata], store[nextint()])
-        store[i].depth = CALLDEPTH-store[nextint()].data
-        store[i].ip = store[nextint()].data
-        store[i].next = store[nextint()]
+        store[i] = typecontext(ref(objdata), ref(nextint()))
+        store[i].depth = CALLDEPTH-ref(nextint()).data
+        store[i].ip = ref(nextint()).data
+        store[i].next = ref(nextint())
       elif objtype == 'Builtin':
         store[i] = typebin()
-        store[i].data = store[objdata].data[0]
-        store[i].hint = store[nextint()].data
-        store[i].argct = store[nextint()].data
+        store[i].data = ref(objdata).data[0]
+        store[i].hint = ref(nextint()).data
+        store[i].argct = ref(nextint()).data
       elif objtype == 'Dispatch':
         dispatches = []
         argck = []
-        for dispatchline in store[objdata].data:
+        for dispatchline in ref(objdata).data:
           dispatches.append(dispatchline.data[0])
           argckline = []
           for typenum in dispatchline.data[1:]:
             argckline.append(typenum.data)
           argck.append(argckline)
-        store[binobj].argck = argck
-        store[binobj].dispatches = dispatches
+        target = ref(binobj)
+        target.argck = argck
+        target.dispatches = dispatches
       else:
         return rt.ded('This was a foolhardy proposal')
+
+    # Report on how many times, and by which objects, the watched
+    # internals ('parse' and 'dsk>') were referenced.
+    for name in set(watchedidx.values()):
+      referencedby = watchedrefs.get(name, [])
+      definedats = [idx for idx, n in watchedidx.items() if n == name]
+      print(f"rom: internal '{name}' defined at object(s) {definedats}, "
+            f"referenced {len(referencedby)} time(s), by object(s) {referencedby}")
   except:
     print('poopd:', objtype, objdata, cursor, i)
-    print('context:', text[cursor-5:cursor+5]) 
-    ded    
+    print('context:', text[cursor-5:cursor+5])
+    ded
 
   # Close out our read by printing the final text.
   print(text[cursor:], end=' ')

@@ -105,7 +105,8 @@
     errlen #2 / -
     #0 DUP2 > ROTD IFTE
     Parse.default.margin errlen - DUP2 < ROTD IFTE
-    " " SWAP * error + DISP ;
+    " " SWAP * error + DISP 
+    "Please try harder next time" DED ;
   { errlen left right :linepos: #0 :line: #1 } LOCAL ;
 'parseded STO
 
