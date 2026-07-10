@@ -44,19 +44,21 @@
  *     else:
  *       ourRT.Break = True
  * Setting rt->brk is a direct port. The `dieanyway` branch is not: Python's
- * `raise KeyboardInterrupt` unwinds the *entire* call stack via an
- * exception, including out of the blocking `input()` call inside `prompt`
- * (the only place dieanyway is ever set). C has no equivalent unwind
- * mechanism through a blocked fgets(3) frame, and this codebase has no
- * longjmp-based error path (rpl_ded works by returning control to the
- * trampoline via a thunk, which only works between eval steps, not out of
- * a blocking libc call). Rather than build a bespoke longjmp/sigsetjmp
- * unwind for this one case, the handler here restores the default SIGINT
- * disposition and re-raises, which terminates the process the same way a
- * second Ctrl-C during a Python `input()` prompt effectively does from the
- * user's perspective (the program stops right there) -- simpler, and matches
- * user-visible behavior, at the cost of not running any of our own cleanup.
- * This judgment call is called out again in the Phase 7 report. */
+ * `raise KeyboardInterrupt` unwinds out of the blocking `input()` call
+ * inside `prompt` (the only place dieanyway is ever set) via an exception,
+ * caught by prompt's own bare `except:`, which reports it through the
+ * ordinary ded() path -- the interpreter survives a Ctrl-C at the prompt.
+ * An earlier version of this port instead re-raised SIGINT with its
+ * default disposition here, terminating the whole process -- simpler, but
+ * a real behavior change from the Python reference, not just an
+ * implementation detail. Fixed by giving bi_prompt (internals.c) a
+ * sigsetjmp() around its blocking fgets(); this handler now calls
+ * siglongjmp(rt->intr_buf, 1) instead, landing back there as if the read
+ * had failed, which funnels into the same ded() call a real EOF/read error
+ * would. intr_buf_active guards the (should-never-happen) case of a
+ * stray SIGINT with dieanyway set but no sigsetjmp currently active, in
+ * which case this falls back to the ordinary rt->brk = 1 path rather than
+ * jumping to an unarmed buffer. */
 
 #include "boot.h"
 #include "internals.h"
@@ -66,25 +68,42 @@
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
+
+/* Cap the process's total address space so a runaway allocation (an
+ * infinite-growth bug hit while running test programs, say) fails fast
+ * instead of eating all system memory. Every allocation in csys/ already
+ * funnels through an xrealloc() helper (gc.c, obj.c) that treats a failed
+ * malloc/realloc as a hard abort with a message rather than returning NULL
+ * to a caller that won't check it, so once this limit is hit the process
+ * dies cleanly on its own instead of needing a SIGKILL from the OOM killer.
+ * This has no Python-reference analogue -- it's a C-port-only safety net,
+ * not a language feature -- so it lives here rather than in rpl.h next to
+ * CALLDEPTH/CPDEPTH. */
+#define RPL_MEM_LIMIT_BYTES ((rlim_t)128 * 1024 * 1024)
+
+static void limit_memory(void) {
+    struct rlimit rl = { RPL_MEM_LIMIT_BYTES, RPL_MEM_LIMIT_BYTES };
+    if (setrlimit(RLIMIT_AS, &rl) != 0)
+        perror("rpl: setrlimit(RLIMIT_AS) failed, continuing without a memory cap");
+}
 
 static rpl_runtime *g_rt = NULL;
 
 static void catchsigint(int signum) {
     (void)signum;
-    if (g_rt && g_rt->dieanyway) {
-        /* Restore default disposition and re-raise: terminates the process,
-         * mirroring the user-visible effect of Python's KeyboardInterrupt
-         * unwinding out of the blocked input() call in `prompt`. See the
-         * file-header comment for the full reasoning. */
-        signal(SIGINT, SIG_DFL);
-        raise(SIGINT);
-        return;
+    if (g_rt && g_rt->dieanyway && g_rt->intr_buf_active) {
+        /* Jump back to the sigsetjmp() in bi_prompt (internals.c), as if
+         * its blocked fgets() had failed -- see the file-header comment. */
+        siglongjmp(g_rt->intr_buf, 1);
     }
     if (g_rt)
         g_rt->brk = 1;
 }
 
 int main(int argc, char **argv) {
+    limit_memory();
+
     const char *personality;
     int n;
     char **args;

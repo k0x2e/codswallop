@@ -570,16 +570,43 @@ static rpl_thunk bi_dispn(rpl_runtime *rt, rpl_obj *self) {
     return cont(rt);
 }
 
+/* Mirrors pysys/internals.py's prompt() exactly, including the SIGINT
+ * story: Python sets dieanyway, then a SIGINT during the blocked input()
+ * raises KeyboardInterrupt there, caught by prompt's bare `except:`, which
+ * pushes the prompt string back, clears Break, and calls ded() -- the same
+ * path an ordinary read failure (e.g. Ctrl-D/EOFError) takes. C has no
+ * exception to unwind a blocked fgets() with, so main.c's SIGINT handler
+ * instead calls siglongjmp(rt->intr_buf, 1) when dieanyway is set, landing
+ * back here via the sigsetjmp() below as if the read had failed -- both
+ * paths (real EOF/error and a SIGINT-driven jump) funnel into the same
+ * ded() call with the same message, matching Python's single except-clause
+ * handling both cases identically. */
 static rpl_thunk bi_prompt(rpl_runtime *rt, rpl_obj *self) {
     (void)self;
-    rt->dieanyway = 1;
-    rpl_obj *promptobj = stack_pop(rt);
+    rpl_obj *volatile promptobj = stack_pop(rt);
     printf("%.*s", (int)promptobj->string.len, promptobj->string.data);
     fflush(stdout);
 
     enum { MAXLINE = 65536 };
-    char *buf = xrealloc(NULL, MAXLINE);
+    char *volatile buf = xrealloc(NULL, MAXLINE);
+
+    rt->dieanyway = 1;
+    if (sigsetjmp(rt->intr_buf, 1)) {
+        /* Arrived here via siglongjmp from catchsigint, not a normal
+         * return from sigsetjmp -- a SIGINT landed while fgets below was
+         * blocked. */
+        rt->intr_buf_active = 0;
+        rt->dieanyway = 0;
+        free(buf);
+        stack_push(rt, promptobj);
+        rt->brk = 0;
+        return rpl_ded(rt, "The user has typed unforgivably");
+    }
+    rt->intr_buf_active = 1;
     char *got = fgets(buf, MAXLINE, stdin);
+    rt->intr_buf_active = 0;
+    rt->dieanyway = 0;
+
     if (!got) {
         free(buf);
         stack_push(rt, promptobj);
@@ -591,7 +618,6 @@ static rpl_thunk bi_prompt(rpl_runtime *rt, rpl_obj *self) {
         len--;
     stack_push(rt, rpl_new_string(&rt->gc, got, len));
     free(buf);
-    rt->dieanyway = 0;
     return cont(rt);
 }
 

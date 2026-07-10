@@ -4,13 +4,20 @@
 #include <string.h>
 
 /* realloc() that aborts on OOM instead of returning NULL (mirrors gc.c's
- * helper of the same name; kept local rather than shared across the two
- * small translation units). */
-static void *xrealloc(void *p, size_t n) {
+ * helper of the same name -- including the collect-and-retry behavior, for
+ * the same reason: kept local rather than shared across the two small
+ * translation units). Every call site below is allocating an RPL object or
+ * a payload buffer owned by one, which is exactly what the root-stack
+ * contract (gc.h) exists to protect across an allocation like this. */
+static void *xrealloc(rpl_gc *gc, void *p, size_t n) {
     void *r = realloc(p, n);
     if (n && !r) {
-        fprintf(stderr, "rpl: out of memory\n");
-        abort();
+        gc_collect(gc);
+        r = realloc(p, n);
+        if (!r) {
+            fprintf(stderr, "rpl: out of memory\n");
+            abort();
+        }
     }
     return r;
 }
@@ -18,15 +25,15 @@ static void *xrealloc(void *p, size_t n) {
 /* Copy n bytes of s into a fresh nul-terminated buffer. Used because RPL
  * string/symbol data isn't nul-terminated at the source (it's length +
  * pointer), but we still want ordinary C strings for owned storage. */
-static char *xstrndup(const char *s, size_t n) {
-    char *r = xrealloc(NULL, n + 1);
+static char *xstrndup(rpl_gc *gc, const char *s, size_t n) {
+    char *r = xrealloc(gc, NULL, n + 1);
     memcpy(r, s, n);
     r[n] = '\0';
     return r;
 }
 
-static char *xstrdup(const char *s) {
-    return xstrndup(s, strlen(s));
+static char *xstrdup(rpl_gc *gc, const char *s) {
+    return xstrndup(gc, s, strlen(s));
 }
 
 rpl_obj *rpl_new_int(rpl_gc *gc, int64_t v) {
@@ -45,7 +52,7 @@ rpl_obj *rpl_new_float(rpl_gc *gc, double v) {
  * type tag, both storing an owned copy of [data, data+len). */
 static rpl_obj *new_stringlike(rpl_gc *gc, uint16_t type, const char *data, size_t len) {
     rpl_obj *o = gc_alloc(gc, type);
-    o->string.data = xstrndup(data, len);
+    o->string.data = xstrndup(gc, data, len);
     o->string.len = len;
     return o;
 }
@@ -63,9 +70,9 @@ rpl_obj *rpl_new_comment(rpl_gc *gc, const char *data, size_t len) {
  * immediately after this returns. */
 rpl_obj *rpl_new_symbol(rpl_gc *gc, char **parts, int nparts) {
     rpl_obj *o = gc_alloc(gc, RPL_SYMBOL);
-    o->symbol.parts = xrealloc(NULL, sizeof(char *) * (size_t)nparts);
+    o->symbol.parts = xrealloc(gc, NULL, sizeof(char *) * (size_t)nparts);
     for (int i = 0; i < nparts; i++)
-        o->symbol.parts[i] = xstrdup(parts[i]);
+        o->symbol.parts[i] = xstrdup(gc, parts[i]);
     o->symbol.nparts = nparts;
     return o;
 }
@@ -93,21 +100,18 @@ rpl_obj *rpl_new_list(rpl_gc *gc, uint16_t type) {
 }
 
 /* Append item to list, growing the backing array geometrically (doubling,
- * starting at 4) when full. gc is unused here -- lists own their backing
- * array directly rather than allocating through the gc -- but kept in the
- * signature for consistency with the rest of the constructor API. */
+ * starting at 4) when full. */
 void rpl_list_push(rpl_gc *gc, rpl_obj *list, rpl_obj *item) {
-    (void)gc;
     if (list->list.len == list->list.cap) {
         list->list.cap = list->list.cap ? list->list.cap * 2 : 4;
-        list->list.data = xrealloc(list->list.data, sizeof(rpl_obj *) * (size_t)list->list.cap);
+        list->list.data = xrealloc(gc, list->list.data, sizeof(rpl_obj *) * (size_t)list->list.cap);
     }
     list->list.data[list->list.len++] = item;
 }
 
 rpl_obj *rpl_new_tag(rpl_gc *gc, const char *name, rpl_obj *obj) {
     rpl_obj *o = gc_alloc(gc, RPL_TAG);
-    o->tag.name = xstrdup(name);
+    o->tag.name = xstrdup(gc, name);
     o->tag.obj = obj;
     return o;
 }
@@ -141,7 +145,7 @@ rpl_obj *rpl_new_context(rpl_gc *gc, rpl_obj *code, rpl_obj *names, rpl_obj *nex
 
 rpl_obj *rpl_new_binproc(rpl_gc *gc, const char *name, rpl_eval_fn fn) {
     rpl_obj *o = gc_alloc(gc, RPL_INTERNAL);
-    o->binproc.name = xstrdup(name);
+    o->binproc.name = xstrdup(gc, name);
     o->binproc.fn = fn;
     return o;
 }
@@ -150,8 +154,8 @@ rpl_obj *rpl_new_binproc(rpl_gc *gc, const char *name, rpl_eval_fn fn) {
  * rpl_builtin_add_dispatch to register each typed handler. */
 rpl_obj *rpl_new_builtin(rpl_gc *gc, const char *name, const char *hint, int argct) {
     rpl_obj *o = gc_alloc(gc, RPL_BUILTIN);
-    o->builtin.name = xstrdup(name);
-    o->builtin.hint = hint ? xstrdup(hint) : NULL;
+    o->builtin.name = xstrdup(gc, name);
+    o->builtin.hint = hint ? xstrdup(gc, hint) : NULL;
     o->builtin.argct = argct;
     o->builtin.argck = NULL;
     o->builtin.dispatches = NULL;
@@ -164,13 +168,12 @@ rpl_obj *rpl_new_builtin(rpl_gc *gc, const char *name, const char *hint, int arg
  * Order matters -- dispatch is first-match linear scan, so earlier calls
  * take priority over later ones with overlapping argck patterns. */
 void rpl_builtin_add_dispatch(rpl_gc *gc, rpl_obj *bin, const int *types, rpl_obj *handler) {
-    (void)gc;
     int n = bin->builtin.ndispatches;
-    bin->builtin.argck = xrealloc(bin->builtin.argck,
+    bin->builtin.argck = xrealloc(gc, bin->builtin.argck,
                                    sizeof(int) * (size_t)(n + 1) * (size_t)bin->builtin.argct);
     memcpy(bin->builtin.argck + (size_t)n * (size_t)bin->builtin.argct, types,
            sizeof(int) * (size_t)bin->builtin.argct);
-    bin->builtin.dispatches = xrealloc(bin->builtin.dispatches, sizeof(rpl_obj *) * (size_t)(n + 1));
+    bin->builtin.dispatches = xrealloc(gc, bin->builtin.dispatches, sizeof(rpl_obj *) * (size_t)(n + 1));
     bin->builtin.dispatches[n] = handler;
     bin->builtin.ndispatches = n + 1;
 }
@@ -209,7 +212,7 @@ rpl_obj *rpl_cp(rpl_gc *gc, rpl_obj *o) {
             n->list.len = o->list.len;
             n->list.cap = o->list.len;
             n->list.data = n->list.len
-                ? xrealloc(NULL, sizeof(rpl_obj *) * (size_t)n->list.len)
+                ? xrealloc(gc, NULL, sizeof(rpl_obj *) * (size_t)n->list.len)
                 : NULL;
             memcpy(n->list.data, o->list.data, sizeof(rpl_obj *) * (size_t)o->list.len);
             return n;
@@ -217,7 +220,7 @@ rpl_obj *rpl_cp(rpl_gc *gc, rpl_obj *o) {
         /* New tag, same name text, same contained object (not deep-copied). */
         case RPL_TAG: {
             rpl_obj *n = gc_alloc(gc, RPL_TAG);
-            n->tag.name = xstrdup(o->tag.name);
+            n->tag.name = xstrdup(gc, o->tag.name);
             n->tag.obj = o->tag.obj;
             return n;
         }
@@ -226,16 +229,16 @@ rpl_obj *rpl_cp(rpl_gc *gc, rpl_obj *o) {
          * a snapshot taken via cp(). */
         case RPL_BUILTIN: {
             rpl_obj *n = gc_alloc(gc, RPL_BUILTIN);
-            n->builtin.name = xstrdup(o->builtin.name);
-            n->builtin.hint = o->builtin.hint ? xstrdup(o->builtin.hint) : NULL;
+            n->builtin.name = xstrdup(gc, o->builtin.name);
+            n->builtin.hint = o->builtin.hint ? xstrdup(gc, o->builtin.hint) : NULL;
             n->builtin.argct = o->builtin.argct;
             n->builtin.ndispatches = o->builtin.ndispatches;
             size_t argck_n = (size_t)o->builtin.ndispatches * (size_t)o->builtin.argct;
-            n->builtin.argck = argck_n ? xrealloc(NULL, sizeof(int) * argck_n) : NULL;
+            n->builtin.argck = argck_n ? xrealloc(gc, NULL, sizeof(int) * argck_n) : NULL;
             if (argck_n)
                 memcpy(n->builtin.argck, o->builtin.argck, sizeof(int) * argck_n);
             n->builtin.dispatches = o->builtin.ndispatches
-                ? xrealloc(NULL, sizeof(rpl_obj *) * (size_t)o->builtin.ndispatches)
+                ? xrealloc(gc, NULL, sizeof(rpl_obj *) * (size_t)o->builtin.ndispatches)
                 : NULL;
             if (o->builtin.ndispatches)
                 memcpy(n->builtin.dispatches, o->builtin.dispatches,

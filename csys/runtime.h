@@ -5,6 +5,8 @@
 #include "gc.h"
 #include "obj.h"
 
+#include <setjmp.h>
+
 /* Mirrors pysys/runtime.py's rplruntime. Holds everything the trampoline,
  * named store, and (eventually) internals need to run a program: the gc,
  * the data stack, the call-stack chain (context), the handful of sentinel
@@ -32,6 +34,20 @@ typedef struct rpl_runtime {
     int brk;        /* set asynchronously (SIGINT) to request a Break error */
     int interrupt;  /* set once a Break has actually been delivered via ded() */
     int dieanyway;
+
+    /* Lets a SIGINT delivered while blocked in a libc call (currently only
+     * `prompt`'s fgets) unwind back into RPL-land instead of killing the
+     * process, mirroring pysys/rpl.py's catchsigint: when dieanyway is set,
+     * Python raises KeyboardInterrupt, which unwinds out of the blocked
+     * input() call and is caught by prompt's bare `except:`, which then
+     * calls rt.ded() same as any other read failure. C has no exception to
+     * raise, so the SIGINT handler (main.c's catchsigint) calls
+     * siglongjmp(intr_buf, 1) instead when intr_buf_active is set, jumping
+     * back to the sigsetjmp() in bi_prompt (internals.c) as if the read had
+     * failed. intr_buf_active guards against a stray SIGINT landing here
+     * with dieanyway set but no sigsetjmp currently active. */
+    sigjmp_buf intr_buf;
+    int intr_buf_active;
 } rpl_runtime;
 
 /* Allocates and wires up every sentinel object (nulltag, lastobj, nullcode,

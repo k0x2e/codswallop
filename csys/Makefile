@@ -1,5 +1,5 @@
 CC       = cc
-CFLAGS   = -std=c11 -Wall -Wextra -g
+CFLAGS   = -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -g
 SRCS     = gc.c obj.c runtime.c types.c
 OBJS     = $(SRCS:.c=.o)
 

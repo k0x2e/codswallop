@@ -4,8 +4,37 @@
 #include <string.h>
 
 /* realloc() that aborts on OOM instead of returning NULL, so callers never
- * have to check. realloc(p, 0) legitimately returns NULL, hence the n check. */
-static void *xrealloc(void *p, size_t n) {
+ * have to check. realloc(p, 0) legitimately returns NULL, hence the n check.
+ * On a first failure, a stalled allocation may just mean the heap is full
+ * of garbage rather than the process genuinely being out of room, so this
+ * runs one full gc_collect() and retries before giving up for good.
+ *
+ * Only safe to use where the allocation is for an RPL object (or its
+ * payload) that the root-stack/perm-root contract already covers -- see
+ * gc.h's file header. NOT used for growing root_stack/perm_roots
+ * themselves (see xrealloc_nocollect below): those arrays are what
+ * gc_root_push/gc_add_perm_root are in the middle of updating when they'd
+ * call this, so a collect triggered mid-growth would run before the new
+ * slot is actually recorded, and could sweep the very object being
+ * protected. */
+static void *xrealloc(rpl_gc *gc, void *p, size_t n) {
+    void *r = realloc(p, n);
+    if (n && !r) {
+        gc_collect(gc);
+        r = realloc(p, n);
+        if (!r) {
+            fprintf(stderr, "rpl: out of memory\n");
+            abort();
+        }
+    }
+    return r;
+}
+
+/* Plain realloc-or-abort, no collection retry -- see the note on xrealloc
+ * above for why root_stack/perm_roots growth must not trigger a collect
+ * mid-registration. These arrays are just pointers-to-pointers and stay
+ * tiny in practice, so losing the OOM-retry here costs nothing real. */
+static void *xrealloc_nocollect(void *p, size_t n) {
     void *r = realloc(p, n);
     if (n && !r) {
         fprintf(stderr, "rpl: out of memory\n");
@@ -74,7 +103,7 @@ void gc_destroy(rpl_gc *gc) {
  * gc_collect() and gc_destroy() can find it. Payload fields are left zeroed;
  * callers (rpl_new_* in obj.c) fill them in immediately after. */
 rpl_obj *gc_alloc(rpl_gc *gc, uint16_t type) {
-    rpl_obj *o = xrealloc(NULL, sizeof(rpl_obj));
+    rpl_obj *o = xrealloc(gc, NULL, sizeof(rpl_obj));
     memset(o, 0, sizeof(*o));
     o->type = type;
     o->alloc_next = gc->all;
@@ -88,7 +117,7 @@ rpl_obj *gc_alloc(rpl_gc *gc, uint16_t type) {
 void gc_root_push(rpl_gc *gc, rpl_obj **slot) {
     if (gc->root_len == gc->root_cap) {
         gc->root_cap = gc->root_cap ? gc->root_cap * 2 : 16;
-        gc->root_stack = xrealloc(gc->root_stack, gc->root_cap * sizeof(*gc->root_stack));
+        gc->root_stack = xrealloc_nocollect(gc->root_stack, gc->root_cap * sizeof(*gc->root_stack));
     }
     gc->root_stack[gc->root_len++] = slot;
 }
@@ -106,7 +135,7 @@ void gc_root_pop(rpl_gc *gc, int n) {
 void gc_add_perm_root(rpl_gc *gc, rpl_obj **slot) {
     if (gc->perm_len == gc->perm_cap) {
         gc->perm_cap = gc->perm_cap ? gc->perm_cap * 2 : 16;
-        gc->perm_roots = xrealloc(gc->perm_roots, gc->perm_cap * sizeof(*gc->perm_roots));
+        gc->perm_roots = xrealloc_nocollect(gc->perm_roots, gc->perm_cap * sizeof(*gc->perm_roots));
     }
     gc->perm_roots[gc->perm_len++] = slot;
 }
