@@ -123,6 +123,13 @@ static const char *const type_names[RPL_NTYPES] = {
     "Builtin", "Directory", "Tag", "List", "Code", "Integer", "Handle", "Quote"
 };
 
+int rpl_type_by_name(const char *name) {
+    for (int i = 0; i < RPL_NTYPES; i++)
+        if (strcmp(type_names[i], name) == 0)
+            return i;
+    return -1;
+}
+
 void rpl_register_types(rpl_runtime *rt) {
     char *types_path[1] = { "Types" };
     rpl_sto(rt, types_path, 1, rpl_firstdir(rt, NULL));

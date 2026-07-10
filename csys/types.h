@@ -61,4 +61,12 @@ rpl_thunk rpl_builtin_eval(rpl_runtime *rt, rpl_obj *self);
  * and RPL-level introspection code will rely on. */
 void rpl_register_types(rpl_runtime *rt);
 
+/* Looks up an RPL_* type number by its canonical name (the same strings
+ * rpl_register_types stores under Types.<Name>, e.g. "Integer", "String").
+ * Used by rom.c's ROM-header parsing to translate a ROM's self-described
+ * type-name table into this build's fixed RPL_* numbering, rather than
+ * assuming the two happen to already agree (see rom.h's file-header
+ * comment). Returns -1 if name doesn't match any registered type. */
+int rpl_type_by_name(const char *name);
+
 #endif /* RPL_TYPES_H */
