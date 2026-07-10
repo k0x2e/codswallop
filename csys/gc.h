@@ -1,6 +1,7 @@
 #ifndef RPL_GC_H
 #define RPL_GC_H
 
+#include "names.h"
 #include "rpl.h"
 
 /* Stop-the-world mark-and-sweep collector.
@@ -28,6 +29,11 @@ typedef struct rpl_gc {
     rpl_obj ***perm_roots;
     size_t     perm_len;
     size_t     perm_cap;
+
+    /* Interning table for Tag names / Symbol path components -- see
+     * names.h. Owned by the gc because gc_free_payload (below) is where
+     * Symbol/Tag objects release their references as they're reaped. */
+    rpl_intern_table names;
 } rpl_gc;
 
 void gc_init(rpl_gc *gc);

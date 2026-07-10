@@ -45,13 +45,14 @@ static void *xrealloc_nocollect(void *p, size_t n) {
 
 void gc_init(rpl_gc *gc) {
     memset(gc, 0, sizeof(*gc));
+    intern_init(&gc->names);
 }
 
 /* Free the heap-allocated payload data hanging off an object (the arrays
  * and buffers rpl_obj itself doesn't own inline) before the rpl_obj struct
  * is freed. Called from both gc_destroy (full teardown) and gc_collect
  * (per-object sweep), so it must not touch alloc_next or other objects. */
-static void gc_free_payload(rpl_obj *o) {
+static void gc_free_payload(rpl_gc *gc, rpl_obj *o) {
     switch (o->type) {
         case RPL_STRING:
         case RPL_COMMENT:
@@ -59,7 +60,7 @@ static void gc_free_payload(rpl_obj *o) {
             break;
         case RPL_SYMBOL:
             for (int i = 0; i < o->symbol.nparts; i++)
-                free(o->symbol.parts[i]);
+                rpl_intern_unref(&gc->names, o->symbol.parts[i]);
             free(o->symbol.parts);
             break;
         case RPL_LIST:
@@ -67,7 +68,7 @@ static void gc_free_payload(rpl_obj *o) {
             free(o->list.data);
             break;
         case RPL_TAG:
-            free(o->tag.name);
+            rpl_intern_unref(&gc->names, o->tag.name);
             break;
         case RPL_BUILTIN:
             free(o->builtin.name);
@@ -90,12 +91,13 @@ void gc_destroy(rpl_gc *gc) {
     rpl_obj *o = gc->all;
     while (o) {
         rpl_obj *next = o->alloc_next;
-        gc_free_payload(o);
+        gc_free_payload(gc, o);
         free(o);
         o = next;
     }
     free(gc->root_stack);
     free(gc->perm_roots);
+    intern_destroy(&gc->names);
     memset(gc, 0, sizeof(*gc));
 }
 
@@ -209,7 +211,7 @@ void gc_collect(rpl_gc *gc) {
             link = &o->alloc_next;
         } else {
             *link = o->alloc_next;
-            gc_free_payload(o);
+            gc_free_payload(gc, o);
             free(o);
             gc->count--;
         }

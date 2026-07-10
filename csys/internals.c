@@ -26,10 +26,14 @@
  *   ded with the same message) is preserved even though the exact libc
  *   error surface (errno vs. Python exceptions) differs.
  *
- * - `prompt` (console input): uses fgets from stdin. There is no line-
- *   editing (readline/libedit) wired up in csys/ yet -- a plain blocking
- *   read is what's implemented here. Matching Python's fancier readline
- *   story (and its Windows fallback) is future work, not this phase.
+ * - `prompt` (console input): now backed by GNU readline (see bi_prompt
+ *   below), matching Python's `import readline` (which patches builtin
+ *   input() to get history/line-editing for free) rather than the earlier
+ *   plain-fgets placeholder. Python has a try/except around the import for
+ *   the "Windows doesn't ship readline" case; there's no equivalent
+ *   conditional-compile fallback here since csys/ only targets POSIX
+ *   (RLIMIT_AS, sigsetjmp/siglongjmp, gettimeofday are already POSIX-only
+ *   throughout this file) -- a non-POSIX build would need its own stub.
  *
  * - `epoch`: uses gettimeofday() rather than time() for closer fidelity to
  *   Python's time.time() (which has sub-second precision); this is a
@@ -79,6 +83,9 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+
+#include <readline/history.h>
+#include <readline/readline.h>
 
 /* realloc() that aborts on OOM instead of returning NULL (same pattern used
  * throughout csys/). */
@@ -242,8 +249,11 @@ static int data_equal(rpl_obj *a, rpl_obj *b) {
     if (a->type == RPL_SYMBOL && b->type == RPL_SYMBOL) {
         if (a->symbol.nparts != b->symbol.nparts)
             return 0;
+        /* Every Symbol's parts are interned (rpl_new_symbol, obj.c), so
+         * identical path components always share one allocation -- pointer
+         * equality is exact, no strcmp needed. */
         for (int i = 0; i < a->symbol.nparts; i++)
-            if (strcmp(a->symbol.parts[i], b->symbol.parts[i]) != 0)
+            if (a->symbol.parts[i] != b->symbol.parts[i])
                 return 0;
         return 1;
     }
@@ -575,49 +585,64 @@ static rpl_thunk bi_dispn(rpl_runtime *rt, rpl_obj *self) {
  * raises KeyboardInterrupt there, caught by prompt's bare `except:`, which
  * pushes the prompt string back, clears Break, and calls ded() -- the same
  * path an ordinary read failure (e.g. Ctrl-D/EOFError) takes. C has no
- * exception to unwind a blocked fgets() with, so main.c's SIGINT handler
- * instead calls siglongjmp(rt->intr_buf, 1) when dieanyway is set, landing
- * back here via the sigsetjmp() below as if the read had failed -- both
- * paths (real EOF/error and a SIGINT-driven jump) funnel into the same
+ * exception to unwind a blocked readline() call with, so main.c's SIGINT
+ * handler instead calls siglongjmp(rt->intr_buf, 1) when dieanyway is set,
+ * landing back here via the sigsetjmp() below as if the read had failed --
+ * both paths (real EOF/error and a SIGINT-driven jump) funnel into the same
  * ded() call with the same message, matching Python's single except-clause
- * handling both cases identically. */
+ * handling both cases identically.
+ *
+ * Line editing is GNU readline, matching Python's `import readline`, which
+ * patches builtin input() to get history/editing for free -- readline()
+ * here plays the same role. rl_catch_signals is turned off once (see
+ * bi_prompt_init below) so readline never installs its own SIGINT handler;
+ * ours in main.c stays in sole charge and the sigsetjmp/siglongjmp dance
+ * above still works. Because that means readline's own post-signal cleanup
+ * never runs either, the sigsetjmp branch below calls rl_free_line_state()
+ * and rl_cleanup_after_signal() itself before returning, undoing whatever
+ * terminal/line state readline() left dangling when it was interrupted --
+ * the same cleanup readline would have done internally had it been left in
+ * charge of the signal. */
+static int rl_configured = 0;
+
 static rpl_thunk bi_prompt(rpl_runtime *rt, rpl_obj *self) {
     (void)self;
-    rpl_obj *volatile promptobj = stack_pop(rt);
-    printf("%.*s", (int)promptobj->string.len, promptobj->string.data);
-    fflush(stdout);
+    if (!rl_configured) {
+        rl_catch_signals = 0;
+        rl_catch_sigwinch = 0;
+        rl_configured = 1;
+    }
 
-    enum { MAXLINE = 65536 };
-    char *volatile buf = xrealloc(NULL, MAXLINE);
+    rpl_obj *volatile promptobj = stack_pop(rt);
 
     rt->dieanyway = 1;
     if (sigsetjmp(rt->intr_buf, 1)) {
         /* Arrived here via siglongjmp from catchsigint, not a normal
-         * return from sigsetjmp -- a SIGINT landed while fgets below was
-         * blocked. */
+         * return from sigsetjmp -- a SIGINT landed while readline() below
+         * was blocked. */
+        rl_free_line_state();
+        rl_cleanup_after_signal();
         rt->intr_buf_active = 0;
         rt->dieanyway = 0;
-        free(buf);
         stack_push(rt, promptobj);
         rt->brk = 0;
         return rpl_ded(rt, "The user has typed unforgivably");
     }
     rt->intr_buf_active = 1;
-    char *got = fgets(buf, MAXLINE, stdin);
+    char *got = readline(promptobj->string.data);
     rt->intr_buf_active = 0;
     rt->dieanyway = 0;
 
     if (!got) {
-        free(buf);
         stack_push(rt, promptobj);
         rt->brk = 0;
         return rpl_ded(rt, "The user has typed unforgivably");
     }
-    size_t len = strlen(got);
-    if (len && got[len - 1] == '\n')
-        len--;
-    stack_push(rt, rpl_new_string(&rt->gc, got, len));
-    free(buf);
+    if (got[0] != '\0')
+        add_history(got);
+    rpl_obj *line = rpl_new_string(&rt->gc, got, strlen(got));
+    free(got);
+    stack_push(rt, line);
     return cont(rt);
 }
 

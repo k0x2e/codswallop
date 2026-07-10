@@ -194,16 +194,32 @@ rpl_obj *rpl_firstdir(rpl_runtime *rt, rpl_obj *obj) {
     return rpl_new_dir(&rt->gc, rt->nulltag, obj ? obj : rt->lastobj);
 }
 
+/* rpl_rcl/rpl_deref/rpl_sto/rpl_rm all walk a directory chain matching each
+ * path component against dir.tag->tag.name. Every Tag's name is interned
+ * (rpl_new_tag, obj.c), so the match target is always a canonical pointer;
+ * interning the incoming query component here too -- rpl_intern() is a
+ * hash lookup, not a walk -- turns the per-hop comparison from a strcmp
+ * into a pointer compare, independent of how long the name is or how deep
+ * the chain gets. The query intern is transient: it's released the moment
+ * this component's match is resolved (found or not), whether or not a new
+ * tag ends up being created (rpl_new_tag interns its own permanent
+ * reference separately, so releasing the transient one here is always
+ * correct, never a premature free of the name the new tag holds). */
+
 rpl_obj *rpl_rcl(rpl_runtime *rt, char *const *parts, int n) {
     rpl_obj *current = rt->context->context.names;
     for (int i = 0; i < n; i++) {
         if (current->type != RPL_DIRECTORY)
             return NULL;
-        while (strcmp(current->dir.tag->tag.name, parts[i]) != 0) {
+        char *key = rpl_intern(&rt->gc.names, parts[i]);
+        while (current->dir.tag->tag.name != key) {
             current = current->dir.next;
-            if (current == rt->lastobj)
+            if (current == rt->lastobj) {
+                rpl_intern_unref(&rt->gc.names, key);
                 return NULL;
+            }
         }
+        rpl_intern_unref(&rt->gc.names, key);
         current = current->dir.tag->tag.obj;
     }
     return current;
@@ -214,11 +230,15 @@ rpl_obj *rpl_deref(rpl_runtime *rt, char *const *parts, int n) {
     for (int i = 0; i < n; i++) {
         if (current->type != RPL_DIRECTORY)
             return NULL;
-        while (strcmp(current->dir.tag->tag.name, parts[i]) != 0) {
+        char *key = rpl_intern(&rt->gc.names, parts[i]);
+        while (current->dir.tag->tag.name != key) {
             current = current->dir.next;
-            if (current == rt->lastobj)
+            if (current == rt->lastobj) {
+                rpl_intern_unref(&rt->gc.names, key);
                 return NULL;
+            }
         }
+        rpl_intern_unref(&rt->gc.names, key);
         if (i + 1 == n)
             return current->dir.tag;
         current = current->dir.tag->tag.obj;
@@ -233,19 +253,24 @@ int rpl_sto(rpl_runtime *rt, char *const *parts, int n, rpl_obj *value) {
         const char *name = parts[i];
         if (current->type != RPL_DIRECTORY)
             return 0;
-        while (strcmp(current->dir.tag->tag.name, name) != 0) {
+        char *key = rpl_intern(&rt->gc.names, name);
+        while (current->dir.tag->tag.name != key) {
             if (current->dir.next == rt->lastobj) {
                 /* Ran off the end of this directory's chain: only allowed
                  * to append a new leaf entry, and only for the final
                  * component -- missing intermediate directories are an
                  * error, never auto-created. */
-                if (counter)
+                if (counter) {
+                    rpl_intern_unref(&rt->gc.names, key);
                     return 0;
+                }
                 current->dir.next = rpl_new_dir(&rt->gc, rpl_new_tag(&rt->gc, name, value), rt->lastobj);
+                rpl_intern_unref(&rt->gc.names, key);
                 return 1;
             }
             current = current->dir.next;
         }
+        rpl_intern_unref(&rt->gc.names, key);
         if (counter) {
             counter--;
             current = current->dir.tag->tag.obj;
@@ -265,11 +290,15 @@ int rpl_rm(rpl_runtime *rt, char *const *parts, int n) {
         const char *name = parts[i];
         if (current->type != RPL_DIRECTORY || current->dir.next == rt->lastobj)
             return 0;
-        while (strcmp(current->dir.next->dir.tag->tag.name, name) != 0) {
+        char *key = rpl_intern(&rt->gc.names, name);
+        while (current->dir.next->dir.tag->tag.name != key) {
             current = current->dir.next;
-            if (current->dir.next == rt->lastobj)
+            if (current->dir.next == rt->lastobj) {
+                rpl_intern_unref(&rt->gc.names, key);
                 return 0;
+            }
         }
+        rpl_intern_unref(&rt->gc.names, key);
         last = current;
         current = current->dir.next->dir.tag->tag.obj;
     }
@@ -282,11 +311,15 @@ int rpl_rm(rpl_runtime *rt, char *const *parts, int n) {
  * to track "namelists seen so far" without repeatedly re-deriving lengths. */
 typedef struct { char *const *parts; int n; } rpl_path;
 
+/* Every path fed through here comes from a Symbol's .parts (rpl_circsym's
+ * own callers) or is built by copying such pointers verbatim (circdir_recurse
+ * below, prefixed with dir.tag->tag.name -- also interned); pointer equality
+ * is exact, no strcmp needed. */
 static int path_eq(rpl_path a, rpl_path b) {
     if (a.n != b.n)
         return 0;
     for (int i = 0; i < a.n; i++)
-        if (strcmp(a.parts[i], b.parts[i]) != 0)
+        if (a.parts[i] != b.parts[i])
             return 0;
     return 1;
 }

@@ -65,14 +65,16 @@ rpl_obj *rpl_new_comment(rpl_gc *gc, const char *data, size_t len) {
     return new_stringlike(gc, RPL_COMMENT, data, len);
 }
 
-/* Deep-copies the parts array itself and every component string into owned
- * storage, so the caller's parts/strings can be freed or stack-allocated
- * immediately after this returns. */
+/* Deep-copies the parts array itself, into owned storage; each component
+ * string is interned (names.h) rather than strdup'd, so identical dotted-
+ * path components across many symbols/tags share one allocation. The
+ * caller's parts/strings can still be freed or stack-allocated immediately
+ * after this returns. */
 rpl_obj *rpl_new_symbol(rpl_gc *gc, char **parts, int nparts) {
     rpl_obj *o = gc_alloc(gc, RPL_SYMBOL);
     o->symbol.parts = xrealloc(gc, NULL, sizeof(char *) * (size_t)nparts);
     for (int i = 0; i < nparts; i++)
-        o->symbol.parts[i] = xstrdup(gc, parts[i]);
+        o->symbol.parts[i] = rpl_intern(&gc->names, parts[i]);
     o->symbol.nparts = nparts;
     return o;
 }
@@ -111,7 +113,7 @@ void rpl_list_push(rpl_gc *gc, rpl_obj *list, rpl_obj *item) {
 
 rpl_obj *rpl_new_tag(rpl_gc *gc, const char *name, rpl_obj *obj) {
     rpl_obj *o = gc_alloc(gc, RPL_TAG);
-    o->tag.name = xstrdup(gc, name);
+    o->tag.name = rpl_intern(&gc->names, name);
     o->tag.obj = obj;
     return o;
 }
@@ -217,10 +219,13 @@ rpl_obj *rpl_cp(rpl_gc *gc, rpl_obj *o) {
             memcpy(n->list.data, o->list.data, sizeof(rpl_obj *) * (size_t)o->list.len);
             return n;
         }
-        /* New tag, same name text, same contained object (not deep-copied). */
+        /* New tag, same name text, same contained object (not deep-copied).
+         * The name is already an interned pointer -- just bump its refcount
+         * (O(1)) and reuse it, rather than re-interning the text. */
         case RPL_TAG: {
             rpl_obj *n = gc_alloc(gc, RPL_TAG);
-            n->tag.name = xstrdup(gc, o->tag.name);
+            rpl_intern_ref(o->tag.name);
+            n->tag.name = o->tag.name;
             n->tag.obj = o->tag.obj;
             return n;
         }
