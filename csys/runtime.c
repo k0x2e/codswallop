@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "types.h"
+#include "dirindex.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -204,7 +205,26 @@ rpl_obj *rpl_firstdir(rpl_runtime *rt, rpl_obj *obj) {
  * this component's match is resolved (found or not), whether or not a new
  * tag ends up being created (rpl_new_tag interns its own permanent
  * reference separately, so releasing the transient one here is always
- * correct, never a premature free of the name the new tag holds). */
+ * correct, never a premature free of the name the new tag holds).
+ *
+ * On top of that, a chain can carry a dirindex_build()'d index (dir.index
+ * -- see dirindex.h) on whichever node MKIDX was called against (only the
+ * persistent root context's names head, in practice, and only once MKIDX
+ * has run). That's very often *not* the node these functions start
+ * scanning from: a query starts at the current context's names, which for
+ * anything but the outermost call frame is some ephemeral per-call local
+ * scope that simply chains onward (via nulltag boundary nodes -- see
+ * dirindex.h's file header) into whatever enclosing scope it was pushed in
+ * front of, all the way down to the real root. So the index check has to
+ * happen at *every* node the walk visits, not just the one it started at
+ * -- otherwise a query that starts in some indexed-nothing local scope and
+ * falls through several frames before ever reaching the indexed root would
+ * silently never benefit from it (this was a real bug caught by profiling
+ * ws.rpl with MKIDX called first and seeing zero difference in rpl_rcl's
+ * call count). Once the walk does step onto an indexed node, the rest of
+ * that node's span is resolved in O(1) and the walk stops -- the index is
+ * exhaustive over everything from where it was built to lastobj, so
+ * there's nothing further out there to keep looking for. */
 
 rpl_obj *rpl_rcl(rpl_runtime *rt, char *const *parts, int n) {
     rpl_obj *current = rt->context->context.names;
@@ -212,15 +232,25 @@ rpl_obj *rpl_rcl(rpl_runtime *rt, char *const *parts, int n) {
         if (current->type != RPL_DIRECTORY)
             return NULL;
         char *key = rpl_intern(&rt->gc.names, parts[i]);
-        while (current->dir.tag->tag.name != key) {
-            current = current->dir.next;
-            if (current == rt->lastobj) {
-                rpl_intern_unref(&rt->gc.names, key);
-                return NULL;
+        rpl_obj *node = current;
+        rpl_obj *found = NULL;
+        for (;;) {
+            if (node->dir.index) {
+                found = dirindex_lookup((rpl_dir_index *)node->dir.index, key);
+                break;
             }
+            if (node->dir.tag->tag.name == key) {
+                found = node;
+                break;
+            }
+            node = node->dir.next;
+            if (node == rt->lastobj)
+                break;
         }
         rpl_intern_unref(&rt->gc.names, key);
-        current = current->dir.tag->tag.obj;
+        if (!found)
+            return NULL;
+        current = found->dir.tag->tag.obj;
     }
     return current;
 }
@@ -231,17 +261,27 @@ rpl_obj *rpl_deref(rpl_runtime *rt, char *const *parts, int n) {
         if (current->type != RPL_DIRECTORY)
             return NULL;
         char *key = rpl_intern(&rt->gc.names, parts[i]);
-        while (current->dir.tag->tag.name != key) {
-            current = current->dir.next;
-            if (current == rt->lastobj) {
-                rpl_intern_unref(&rt->gc.names, key);
-                return NULL;
+        rpl_obj *node = current;
+        rpl_obj *found = NULL;
+        for (;;) {
+            if (node->dir.index) {
+                found = dirindex_lookup((rpl_dir_index *)node->dir.index, key);
+                break;
             }
+            if (node->dir.tag->tag.name == key) {
+                found = node;
+                break;
+            }
+            node = node->dir.next;
+            if (node == rt->lastobj)
+                break;
         }
         rpl_intern_unref(&rt->gc.names, key);
+        if (!found)
+            return NULL;
         if (i + 1 == n)
-            return current->dir.tag;
-        current = current->dir.tag->tag.obj;
+            return found->dir.tag;
+        current = found->dir.tag->tag.obj;
     }
     return NULL;
 }
@@ -254,30 +294,56 @@ int rpl_sto(rpl_runtime *rt, char *const *parts, int n, rpl_obj *value) {
         if (current->type != RPL_DIRECTORY)
             return 0;
         char *key = rpl_intern(&rt->gc.names, name);
-        while (current->dir.tag->tag.name != key) {
-            if (current->dir.next == rt->lastobj) {
-                /* Ran off the end of this directory's chain: only allowed
-                 * to append a new leaf entry, and only for the final
-                 * component -- missing intermediate directories are an
-                 * error, never auto-created. */
-                if (counter) {
-                    rpl_intern_unref(&rt->gc.names, key);
-                    return 0;
-                }
-                current->dir.next = rpl_new_dir(&rt->gc, rpl_new_tag(&rt->gc, name, value), rt->lastobj);
-                rpl_intern_unref(&rt->gc.names, key);
-                return 1;
+
+        /* Walk to either a match, an indexed node (whose index then
+         * settles the rest in O(1)), or the true tail (node->dir.next ==
+         * lastobj, nothing indexed anywhere in this span). */
+        rpl_obj *node = current;
+        rpl_dir_index *idx = NULL;
+        rpl_obj *found = NULL;
+        for (;;) {
+            if (node->dir.index) {
+                idx = (rpl_dir_index *)node->dir.index;
+                found = dirindex_lookup(idx, key);
+                break;
             }
-            current = current->dir.next;
+            if (node->dir.tag->tag.name == key) {
+                found = node;
+                break;
+            }
+            if (node->dir.next == rt->lastobj)
+                break; /* node is the tail; found/idx stay NULL */
+            node = node->dir.next;
+        }
+
+        if (!found) {
+            /* Missing: only allowed to append a new leaf entry, and only
+             * for the final component -- missing intermediate directories
+             * are an error, never auto-created. */
+            if (counter) {
+                rpl_intern_unref(&rt->gc.names, key);
+                return 0;
+            }
+            rpl_obj *newnode = rpl_new_dir(&rt->gc, rpl_new_tag(&rt->gc, name, value), rt->lastobj);
+            if (idx) {
+                dirindex_tail(idx)->dir.next = newnode;
+                dirindex_append(idx, key, newnode);
+            } else {
+                node->dir.next = newnode; /* node is the true tail */
+            }
+            rpl_intern_unref(&rt->gc.names, key);
+            return 1;
         }
         rpl_intern_unref(&rt->gc.names, key);
         if (counter) {
             counter--;
-            current = current->dir.tag->tag.obj;
+            current = found->dir.tag->tag.obj;
+        } else {
+            /* Final component, already exists -- leave `current` pointing
+             * at its directory node so the tag can be overwritten below,
+             * rather than descending into its value. */
+            current = found;
         }
-        /* else: this is the final component and it already exists --
-         * leave `current` pointing at its directory node so the tag can
-         * be overwritten below, rather than descending into its value. */
     }
     current->dir.tag->tag.obj = value;
     return 1;
@@ -286,13 +352,22 @@ int rpl_sto(rpl_runtime *rt, char *const *parts, int n, rpl_obj *value) {
 int rpl_rm(rpl_runtime *rt, char *const *parts, int n) {
     rpl_obj *current = rt->context->context.names;
     rpl_obj *last = current;
+    rpl_dir_index *idx = NULL; /* index (if any) covering the final match */
     for (int i = 0; i < n; i++) {
         const char *name = parts[i];
         if (current->type != RPL_DIRECTORY || current->dir.next == rt->lastobj)
             return 0;
         char *key = rpl_intern(&rt->gc.names, name);
+        /* Removal's own splice-point search stays a plain walk regardless
+         * (rare enough that it isn't worth tracking predecessors in the
+         * index too -- see dirindex.h); but it still needs to notice
+         * whether it ever steps onto an indexed node, purely so the right
+         * index can be kept in sync after the splice below. */
+        idx = current->dir.index ? (rpl_dir_index *)current->dir.index : NULL;
         while (current->dir.next->dir.tag->tag.name != key) {
             current = current->dir.next;
+            if (current->dir.index)
+                idx = (rpl_dir_index *)current->dir.index;
             if (current->dir.next == rt->lastobj) {
                 rpl_intern_unref(&rt->gc.names, key);
                 return 0;
@@ -302,8 +377,18 @@ int rpl_rm(rpl_runtime *rt, char *const *parts, int n) {
         last = current;
         current = current->dir.next->dir.tag->tag.obj;
     }
-    /* `last` is the node just before the match; splice the match out. */
-    last->dir.next = last->dir.next->dir.next;
+    /* `last` is the node just before the match; splice the match out. The
+     * removed tag's own name is still a live reference (the tag object
+     * hasn't been freed, just unlinked), so it's safe to read here for the
+     * index update even though our own transient `key` was released above. */
+    rpl_obj *removed = last->dir.next;
+    last->dir.next = removed->dir.next;
+
+    if (idx) {
+        dirindex_remove(idx, removed->dir.tag->tag.name);
+        if (dirindex_tail(idx) == removed)
+            dirindex_set_tail(idx, last);
+    }
     return 1;
 }
 

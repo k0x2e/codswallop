@@ -55,7 +55,14 @@ struct rpl_obj {
         struct { char *data; size_t len; }          string;   /* String, Comment */
         struct { char **parts; int nparts; }        symbol;   /* Symbol (dotted path) */
         struct { rpl_obj **data; int len; int cap; } list;    /* List, Code */
-        struct { rpl_obj *tag; rpl_obj *next; }      dir;      /* Directory */
+        /* index: NULL on almost every node; the MKIDX builtin (see
+         * dirindex.h) may attach an accelerator structure to a chain's head
+         * node so rpl_rcl/rpl_sto/rpl_rm can resolve the rest of that chain
+         * in O(1) instead of walking it. Declared void* here (rather than
+         * struct rpl_dir_index*) so rpl.h doesn't need to know that type;
+         * dirindex.c/.h own the real definition and every other file casts
+         * through dirindex.h's accessors. */
+        struct { rpl_obj *tag; rpl_obj *next; void *index; } dir; /* Directory */
         struct { char *name; rpl_obj *obj; }         tag;      /* Tag */
         struct { rpl_obj *inner; }                   quote;    /* Quote */
         FILE *                                       handle;  /* Handle */

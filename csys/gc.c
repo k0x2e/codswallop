@@ -1,4 +1,5 @@
 #include "gc.h"
+#include "dirindex.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -69,6 +70,10 @@ static void gc_free_payload(rpl_gc *gc, rpl_obj *o) {
             break;
         case RPL_TAG:
             rpl_intern_unref(&gc->names, o->tag.name);
+            break;
+        case RPL_DIRECTORY:
+            if (o->dir.index)
+                dirindex_free((rpl_dir_index *)o->dir.index);
             break;
         case RPL_BUILTIN:
             free(o->builtin.name);

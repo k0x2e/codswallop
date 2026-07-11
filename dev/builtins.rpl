@@ -38,6 +38,16 @@ I*.stobin
   :table: { { I*.self } } }
 I*.stobin
 
+(Build a fast-lookup index over the current context's names chain.  See
+ dev/boot.rpl for where this actually gets called -- once, after the
+ standard library has finished populating the root context, so ordinary
+ program execution never walks that chain node-by-node again.)
+{ :name: MKIDX
+  :args: #0
+  :hint: "Build an index of the current context's directory chain for faster name lookups.  Meant to be called once, after startup, on the outermost (root) context."
+  :table: { { I*.mkidx } } }
+I*.stobin
+
 
 ( ### Input/Output)
 

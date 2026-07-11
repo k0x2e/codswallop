@@ -67,6 +67,12 @@ ISDED?
  internals directory to keep it out of easy reach.)
 I* QUOTE 'I* STO
 
+(Everything permanent -- every builtin and standard-library name -- is
+ stored by this point.  Index the root context's names chain now so every
+ RCL/STO from here on resolves in O(1) instead of walking hundreds of
+ entries; see dev/builtins.rpl and csys/dirindex.h.)
+MKIDX
+
 (And hand off to a commandline program or to the user.)
 
 ARGS LEN

@@ -75,6 +75,7 @@
 #include "internals.h"
 #include "types.h"
 #include "rom.h"
+#include "dirindex.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -394,6 +395,21 @@ static rpl_thunk bi_self(rpl_runtime *rt, rpl_obj *self) {
 static rpl_thunk bi_getcontext(rpl_runtime *rt, rpl_obj *self) {
     (void)self;
     stack_push(rt, rt->context);
+    return cont(rt);
+}
+
+/* MKIDX: build a dirindex (dirindex.h) over whatever the calling context's
+ * names head currently is -- see the design note in dirindex.h. No stack
+ * effect; meant to be called once, by hand, from RPL source (boot.rpl)
+ * after the standard library has finished populating the root context's
+ * names chain and before real work starts hammering on rpl_rcl. Calling
+ * it again on an already-indexed head, or from inside a local scope
+ * (whose head is thrown away moments later), is harmless but pointless --
+ * dirindex_build() is a no-op if dir.index is already set, and an index
+ * over a scope that's about to be discarded just gets freed with it. */
+static rpl_thunk bi_mkidx(rpl_runtime *rt, rpl_obj *self) {
+    (void)self;
+    dirindex_build(rt->context->context.names, rt->lastobj);
     return cont(rt);
 }
 
@@ -2294,6 +2310,7 @@ static const rpl_internal_entry rpl_internals_table[] = {
     { "getcontext", bi_getcontext }, { "setcontext", bi_setcontext },
     { "nextcontext", bi_nextcontext }, { "clrrun", bi_clrrun },
     { "errstate", bi_errstate }, { "lastcall", bi_lastcall },
+    { "mkidx", bi_mkidx },
 
     /* Input/Output */
     { "fopen", bi_fopen }, { "feof", bi_feof }, { "fclose", bi_fclose },
