@@ -1,0 +1,49 @@
+(1D Life, from Nakazoto)
+
+':: runforever ;
+
+{
+  :seed:
+  ::
+    { } 
+    ':: RND .5 + >INT + ;
+    #68 * EVAL ;
+
+  :showline:
+  ::
+    "" SWAP ':: "*" " " IFTE + ; FOREACH DROP DISP ;
+
+  :evolve:
+  ::
+    DUP LEN #2 -
+    '::
+      { }
+      '::
+        input idx #2 - DUP #4 + SUBS
+        OBJ> DROP
+        + SWAP #4 ROLLD + + SWAP
+        ':: DUP ODD NOT AND ;
+        ':: DUP #2 == SWAP #3 == OR ;
+        IFTE +
+        idx #1 + DUP 'idx STO max < ;
+      REP 
+      { #0 #0 } DUP ROTD + + ;
+    { max input :idx: #2 }
+    LOCAL ;
+
+  :fullevolution:
+  ::
+    seed
+    '::
+      '::
+        DUP showline evolve
+        idx #1 - DUP 'idx STO ;
+      REP ;
+    { :idx: #25 }
+    LOCAL showline ;
+    
+  :runforever:
+  :: fullevolution runforever ;
+}
+
+LOCAL

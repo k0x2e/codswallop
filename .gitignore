@@ -1,5 +1,8 @@
 # Editor detritus
 *~
 
+# Object files
+*.o
+
 # Python compile directories
 __pycache__/

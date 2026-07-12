@@ -1,5 +1,6 @@
 CC       = cc
-CFLAGS   = -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -g
+# -g for debugging
+CFLAGS   = -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -O2
 SRCS     = dirindex.c gc.c names.c obj.c runtime.c types.c
 OBJS     = $(SRCS:.c=.o)
 
