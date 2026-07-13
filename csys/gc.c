@@ -102,6 +102,7 @@ void gc_destroy(rpl_gc *gc) {
     }
     free(gc->root_stack);
     free(gc->perm_roots);
+    free(gc->held);
     intern_destroy(&gc->names);
     memset(gc, 0, sizeof(*gc));
 }
@@ -134,6 +135,32 @@ void gc_root_push(rpl_gc *gc, rpl_obj **slot) {
 void gc_root_pop(rpl_gc *gc, int n) {
     while (n-- > 0 && gc->root_len)
         gc->root_len--;
+}
+
+/* Push an object by value onto the held stack -- see gc.h's file header and
+ * the note on gc_hold in gc.h for why this exists alongside root_stack.
+ * Uses xrealloc_nocollect for the same reason root_stack/perm_roots do:
+ * this is called from inside gc_alloc, so a collect triggered mid-growth
+ * here would run before `o` (already linked into gc->all but not yet
+ * returned to any caller) is recorded as held, and could sweep it. */
+void gc_hold(rpl_gc *gc, rpl_obj *o) {
+    if (gc->held_len == gc->held_cap) {
+        gc->held_cap = gc->held_cap ? gc->held_cap * 2 : 64;
+        gc->held = xrealloc_nocollect(gc->held, gc->held_cap * sizeof(*gc->held));
+    }
+    gc->held[gc->held_len++] = o;
+}
+
+size_t gc_hold_mark(rpl_gc *gc) {
+    return gc->held_len;
+}
+
+/* Truncate the held stack back to a mark taken earlier via gc_hold_mark.
+ * Clamped like gc_root_pop so releasing to a stale/larger mark is a
+ * harmless no-op rather than growing the held count. */
+void gc_release(rpl_gc *gc, size_t mark) {
+    if (mark < gc->held_len)
+        gc->held_len = mark;
 }
 
 /* Register a slot as a permanent root: everything reachable from *slot is
@@ -198,15 +225,18 @@ static void gc_mark(rpl_obj *o) {
     }
 }
 
-/* Full stop-the-world collection: mark from every permanent root and every
- * entry on the scratch root stack, then sweep gc->all, freeing (via
- * gc_free_payload + free) anything left unmarked and clearing the mark bit
- * on survivors so the next collection starts clean. */
+/* Full stop-the-world collection: mark from every permanent root, every
+ * entry on the scratch root stack, and everything currently held (see
+ * gc_hold), then sweep gc->all, freeing (via gc_free_payload + free)
+ * anything left unmarked and clearing the mark bit on survivors so the next
+ * collection starts clean. */
 void gc_collect(rpl_gc *gc) {
     for (size_t i = 0; i < gc->perm_len; i++)
         gc_mark(*gc->perm_roots[i]);
     for (size_t i = 0; i < gc->root_len; i++)
         gc_mark(*gc->root_stack[i]);
+    for (size_t i = 0; i < gc->held_len; i++)
+        gc_mark(gc->held[i]);
 
     rpl_obj **link = &gc->all;
     while (*link) {

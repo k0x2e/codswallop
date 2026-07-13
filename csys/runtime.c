@@ -151,9 +151,30 @@ rpl_thunk rpl_ded(rpl_runtime *rt, const char *reason) {
     return rpl_obj_eval(rt, rt->dedsym);
 }
 
+/* Each trampoline step is exactly one thunk call -- one builtin/internal
+ * invocation, one symbol resolution, one instruction fetch, etc. -- and by
+ * construction (see gc.h's file header) never recurses back into rpl_rs
+ * itself mid-step. That makes "one step" the natural unit of safety: mark
+ * the held stack before the call and release back to that mark after, so
+ * anything the step gc_hold()'d (every fresh gc_alloc(), every stack_pop())
+ * stays protected for the step's whole duration no matter how many further
+ * allocations happen with it still only reachable from a C local, and goes
+ * back to being ordinary collectible garbage the instant the step that
+ * needed it is done. */
 void rpl_rs(rpl_runtime *rt, rpl_thunk next) {
-    while (rt->running)
+    /* Everything allocated before this call (ROM loading, boot) has been
+     * gc_hold()'d but never released, since that only happens per-step
+     * below. Anything from that phase actually worth keeping is already
+     * reachable through a perm root (rt->stack, rt->context, the named
+     * store) by now, so it's safe to drop the whole backlog in one go --
+     * otherwise it would sit in `held` forever, silently exempting it from
+     * every future collection. */
+    gc_release(&rt->gc, 0);
+    while (rt->running) {
+        size_t mark = gc_hold_mark(&rt->gc);
         next = next.fn(rt, next.self);
+        gc_release(&rt->gc, mark);
+    }
 }
 
 rpl_thunk rpl_newcall(rpl_runtime *rt, rpl_obj *obj) {

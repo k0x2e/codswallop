@@ -26,11 +26,15 @@ static char *xstrndup(const char *s, size_t n) {
 }
 
 /* Same pop-returns-NULL-on-empty convention as internals.c's stack_pop
- * (mirrors typelst.pop()). */
+ * (mirrors typelst.pop()) -- including gc_hold()'ing the result so it
+ * survives across further allocating calls made with it still in hand;
+ * see internals.c's stack_pop and gc.h's file header for why. */
 static rpl_obj *stack_pop(rpl_runtime *rt) {
     if (rt->stack->list.len == 0)
         return NULL;
-    return rt->stack->list.data[--rt->stack->list.len];
+    rpl_obj *o = rt->stack->list.data[--rt->stack->list.len];
+    gc_hold(&rt->gc, o);
+    return o;
 }
 
 static void stack_push(rpl_runtime *rt, rpl_obj *o) {

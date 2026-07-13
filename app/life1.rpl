@@ -11,7 +11,7 @@
 
   :showline:
   ::
-    "" SWAP ':: "*" " " IFTE + ; FOREACH DROP DISP ;
+    "" SWAP ':: "*" " " IFTE + ; FOREACH DROP (DISP) DROP ;
 
   :evolve:
   ::

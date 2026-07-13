@@ -124,7 +124,15 @@ static char *xstrdup(const char *s) {
 static rpl_obj *stack_pop(rpl_runtime *rt) {
     if (rt->stack->list.len == 0)
         return NULL;
-    return rt->stack->list.data[--rt->stack->list.len];
+    rpl_obj *o = rt->stack->list.data[--rt->stack->list.len];
+    /* Popping removes `o` from rt->stack's reach (a perm root only covers
+     * list.data[0, len)), but callers routinely keep using the raw pointer
+     * afterward -- often across further allocating calls that could trigger
+     * a gc_collect(). gc_hold() keeps it alive until rpl_rs()'s per-step
+     * gc_release() (see runtime.c), which is always at least as long as
+     * this single builtin call lasts. */
+    gc_hold(&rt->gc, o);
+    return o;
 }
 
 static void stack_push(rpl_runtime *rt, rpl_obj *o) {
