@@ -262,13 +262,14 @@ rpl_obj *rpl_cp(rpl_gc *gc, rpl_obj *o) {
         case RPL_CODE: {
             gc_root_push(gc, &o);
             rpl_obj *n = gc_alloc(gc, o->type);
+            gc_root_push(gc, &n);
             n->list.len = o->list.len;
             n->list.cap = o->list.len;
             n->list.data = n->list.len
                 ? xrealloc(gc, NULL, sizeof(rpl_obj *) * (size_t)n->list.len)
                 : NULL;
             memcpy(n->list.data, o->list.data, sizeof(rpl_obj *) * (size_t)o->list.len);
-            gc_root_pop(gc, 1);
+            gc_root_pop(gc, 2);
             return n;
         }
         /* New tag, same name text, same contained object (not deep-copied).
@@ -287,6 +288,7 @@ rpl_obj *rpl_cp(rpl_gc *gc, rpl_obj *o) {
         case RPL_BUILTIN: {
             gc_root_push(gc, &o);
             rpl_obj *n = gc_alloc(gc, RPL_BUILTIN);
+            gc_root_push(gc, &n);
             n->builtin.name = xstrdup(gc, o->builtin.name);
             n->builtin.hint = o->builtin.hint ? xstrdup(gc, o->builtin.hint) : NULL;
             n->builtin.argct = o->builtin.argct;
@@ -301,7 +303,7 @@ rpl_obj *rpl_cp(rpl_gc *gc, rpl_obj *o) {
             if (o->builtin.ndispatches)
                 memcpy(n->builtin.dispatches, o->builtin.dispatches,
                        sizeof(rpl_obj *) * (size_t)o->builtin.ndispatches);
-            gc_root_pop(gc, 1);
+            gc_root_pop(gc, 2);
             return n;
         }
         case RPL_DIRECTORY:

@@ -160,7 +160,22 @@ rpl_thunk rpl_ded(rpl_runtime *rt, const char *reason) {
  * stays protected for the step's whole duration no matter how many further
  * allocations happen with it still only reachable from a C local, and goes
  * back to being ordinary collectible garbage the instant the step that
- * needed it is done. */
+ * needed it is done.
+ *
+ * One subtlety that isn't covered by "release after the step that needed
+ * it": the *next* thunk's target -- next.self, e.g. the Code object IFTE
+ * just chose that rpl_code_eval is about to call -- is very often a value
+ * the current step just stack_pop()'d and is only still alive via this
+ * step's held batch. Releasing that batch and *then* handing next.self to
+ * the following iteration would leave it referenced by nothing but a C
+ * local for however long it takes that iteration's own allocations to run,
+ * which is exactly the gap a gc_collect() triggered in there could sweep it
+ * in. `carry` closes that gap: its address is registered once via
+ * gc_root_push (not re-pushed every iteration, so this costs one root slot
+ * for rpl_rs's whole run, not one per step) and reassigned to next.self
+ * after every step, so whatever the upcoming step is about to operate on
+ * stays reachable across the boundary (gc_mark is transitive, so this
+ * protects everything next.self reaches too, not just the pointer itself). */
 void rpl_rs(rpl_runtime *rt, rpl_thunk next) {
     /* Everything allocated before this call (ROM loading, boot) has been
      * gc_hold()'d but never released, since that only happens per-step
@@ -170,11 +185,15 @@ void rpl_rs(rpl_runtime *rt, rpl_thunk next) {
      * otherwise it would sit in `held` forever, silently exempting it from
      * every future collection. */
     gc_release(&rt->gc, 0);
+    rpl_obj *carry = next.self;
+    gc_root_push(&rt->gc, &carry);
     while (rt->running) {
         size_t mark = gc_hold_mark(&rt->gc);
         next = next.fn(rt, next.self);
         gc_release(&rt->gc, mark);
+        carry = next.self;
     }
+    gc_root_pop(&rt->gc, 1);
 }
 
 rpl_thunk rpl_newcall(rpl_runtime *rt, rpl_obj *obj) {
